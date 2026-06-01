@@ -88,9 +88,9 @@ func (n *ZypoNode) RegisterDomainDHT(record *ZypoRecord) error {
 			return
 		}
 
-		// Повторяем попытки публикации, так как при старте таблица маршрутизации может быть пуста
-		maxRetries := 15
-		for i := 0; i < maxRetries; i++ {
+		// Повторяем попытки публикации бесконечно, пока не появятся DHT-серверы в сети
+		attempt := 1
+		for {
 			ctx, cancel := context.WithTimeout(n.ctx, 30*time.Second)
 			err := n.DHT.PutValue(ctx, key, val)
 			cancel()
@@ -100,11 +100,16 @@ func (n *ZypoNode) RegisterDomainDHT(record *ZypoRecord) error {
 				return
 			}
 			
-			log.Printf("[DNS] Background DHT publication failed for %s (attempt %d/%d): %v", record.Domain, i+1, maxRetries, err)
-			time.Sleep(2 * time.Second)
+			log.Printf("[DNS] Background DHT publication failed for %s (attempt %d): %v", record.Domain, attempt, err)
+			
+			// Если нода выключается, прерываем цикл
+			select {
+			case <-n.ctx.Done():
+				return
+			case <-time.After(5 * time.Second):
+			}
+			attempt++
 		}
-		
-		log.Printf("[DNS] FATAL: Could not publish %s to DHT after %d attempts", record.Domain, maxRetries)
 	}()
 	
 	return nil
