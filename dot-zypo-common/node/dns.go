@@ -100,6 +100,13 @@ func (n *ZypoNode) RegisterDomainDHT(record *ZypoRecord) error {
 				return
 			}
 			
+			// Если сеть состоит только из этой ноды, PutValue возвращает ошибку отсутствия пиров,
+			// НО локально запись уже сохранена. Считаем это успехом.
+			if strings.Contains(err.Error(), "failed to find any peer in table") || strings.Contains(err.Error(), "routing: not found") {
+				log.Printf("[DNS] Warn: Published %s locally, but no other DHT servers in network to replicate to", record.Domain)
+				return
+			}
+			
 			log.Printf("[DNS] Background DHT publication failed for %s (attempt %d): %v", record.Domain, attempt, err)
 			
 			// Если нода выключается, прерываем цикл
@@ -124,12 +131,30 @@ func (n *ZypoNode) ResolveDomain(domain string) ([]peer.ID, error) {
 	}
 	n.localDNSMu.RUnlock()
 
-	// 1. Try DHT.
+	// 1. Try DHT with retries (routing table might be warming up).
 	key := "/zypo/dns/" + domain
-	ctx, cancel := context.WithTimeout(n.ctx, 10*time.Second) // 10 second timeout for DHT resolution
-	defer cancel()
 	
-	val, err := n.DHT.GetValue(ctx, key)
+	var val []byte
+	var err error
+	maxResolveRetries := 5
+	for i := 0; i < maxResolveRetries; i++ {
+		ctx, cancel := context.WithTimeout(n.ctx, 10*time.Second) // 10 second timeout for DHT resolution
+		val, err = n.DHT.GetValue(ctx, key)
+		cancel()
+		
+		if err == nil {
+			break
+		}
+		
+		// Если ошибка "routing: not found", DHT возможно еще загружается, подождем и попробуем еще раз
+		if strings.Contains(err.Error(), "routing: not found") || strings.Contains(err.Error(), "failed to find any peer") {
+			log.Printf("[DNS] DHT not ready for %s, retrying (%d/%d)...", domain, i+1, maxResolveRetries)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		break // Если другая ошибка (например, таймаут), прерываем
+	}
+	
 	if err == nil {
 		var record ZypoRecord
 		if err := json.Unmarshal(val, &record); err == nil {
