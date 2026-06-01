@@ -215,6 +215,9 @@ func NewNode(ctx context.Context, cfg Config) (*ZypoNode, error) {
 		dht.Mode(dhtMode), 
 		dht.Validator(validator),
 		dht.ProtocolPrefix("/zypo"),
+		// Разрешаем приватные/локальные IP-адреса, чтобы работало в Docker, LAN и через VPN (ZeroTier)
+		dht.RoutingTableFilter(func(d interface{}, p peer.ID) bool { return true }),
+		dht.QueryFilter(func(d interface{}, p peer.AddrInfo) bool { return true }),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init DHT: %w", err)
