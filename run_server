@@ -1,0 +1,19 @@
+#!/bin/bash
+# run_server - Start the Zypo Server Node (For hosting your domains remotely)
+
+# Kill child processes on exit
+trap "kill 0" EXIT
+
+echo "Starting Server Node daemon (auto-restarting on .go/.html changes)..."
+
+# Check if nodemon is installed
+if ! command -v nodemon &> /dev/null; then
+    echo "Warning: nodemon not found. Installing globally via npm..."
+    npm install -g nodemon
+fi
+
+echo "Cleaning up old processes on port 8901..."
+lsof -ti:8901 | xargs kill -9 2>/dev/null
+sleep 1
+
+cd dot-zypo-server && nodemon --watch . --watch ../dot-zypo-common --ignore data/ --ignore zypo_sites/ --ext go,html,css,json --exec "go run main.go"

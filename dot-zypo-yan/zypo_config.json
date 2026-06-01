@@ -1,0 +1,23 @@
+{
+  "is_command_center": false,
+  "is_server_node": false,
+  "is_gateway": false,
+  "gateway_port": 8080,
+  "listen_port": 9000,
+  "rpc_port": 8902,
+  "rpc_token": "zypo_default_secret",
+  "dash_port": 0,
+  "dash_user": "admin",
+  "dash_pass": "zypo",
+  "forward_proxy_port": 8903,
+  "key_file": "data/yan_key.bin",
+  "data_dir": "data",
+  "sites_dir": "zypo_sites",
+  "enable_mdns": false,
+  "enable_vpn": true,
+  "bootstrap_nodes": [
+    "/ip4/213.171.27.234/tcp/8900/p2p/12D3KooWPyuxuDGwsnBB6sKvCarjfRimWhNvvXaAhYnGkesBFbEf"
+  ],
+  "discovery_urls": [],
+  "command_center_addr": "/ip4/213.171.27.234/tcp/8900/p2p/12D3KooWPyuxuDGwsnBB6sKvCarjfRimWhNvvXaAhYnGkesBFbEf"
+}

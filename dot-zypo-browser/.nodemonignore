@@ -1,0 +1,3 @@
+{
+  "ignore": ["bin/*", "dist/*", "node_modules/*", "*.json"]
+}

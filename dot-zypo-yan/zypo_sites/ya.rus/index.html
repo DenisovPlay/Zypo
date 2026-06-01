@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yan Search</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="zb://dist/alpine.min.js"></script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .search-glow:focus-within {
+            box-shadow: 0 0 50px -10px rgba(59, 130, 246, 0.3);
+        }
+    </style>
+</head>
+<body class="bg-black text-white min-h-screen flex flex-col font-sans" x-data="yanApp()">
+    
+    <!-- Top Header for Search Results Mode -->
+    <header x-show="isSearchMode" x-cloak class="w-full p-6 border-b border-zinc-800 bg-black/80 backdrop-blur-md sticky top-0 z-50 flex items-center gap-6">
+        <div class="flex items-center gap-4 cursor-pointer" @click="goHome()">
+            <div class="w-12 h-12 bg-gradient-to-tr from-yellow-500 via-red-500 to-red-600 rounded-2xl flex items-center justify-center shadow-lg shadow-red-900/20 rotate-3">
+                <span class="text-2xl font-black italic -ml-1">Y</span>
+            </div>
+            <h1 class="text-2xl font-black tracking-tighter hidden sm:block" x-text="t('ya.title')"></h1>
+        </div>
+        
+        <div class="flex-grow max-w-3xl relative group">
+            <div class="search-glow relative z-10 flex items-center bg-zinc-900 border border-zinc-800 rounded-full p-1 pr-2 transition-all duration-300">
+                <input 
+                    type="text" 
+                    x-model="query" 
+                    @keydown.enter="doSearch()"
+                    :placeholder="t('ya.placeholder')" 
+                    class="flex-grow bg-transparent border-none px-6 py-3 text-lg outline-none placeholder:text-zinc-600"
+                >
+                <button 
+                    @click="doSearch()"
+                    class="bg-white text-black px-6 py-2 rounded-full font-bold hover:bg-zinc-200 transition-all active:scale-95"
+                    x-text="t('ya.button')"
+                ></button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <div class="flex-grow flex flex-col items-center px-8" :class="isSearchMode ? 'pt-8 items-start max-w-4xl mx-auto w-full' : 'justify-center'">
+        
+        <!-- Home Mode Center Content -->
+        <div x-show="!isSearchMode" class="flex flex-col items-center w-full max-w-2xl mb-24" x-cloak>
+            <!-- Logo -->
+            <div class="flex flex-col items-center mb-12">
+                <div class="w-32 h-32 bg-gradient-to-tr from-yellow-500 via-red-500 to-red-600 rounded-[3rem] flex items-center justify-center shadow-2xl shadow-red-900/20 mb-6 rotate-3">
+                    <span class="text-7xl font-black italic -ml-2">Y</span>
+                </div>
+                <h1 class="text-5xl font-black tracking-tighter" x-text="t('ya.title')"></h1>
+            </div>
+
+            <!-- Search Bar -->
+            <div class="w-full relative group">
+                <div class="search-glow relative z-10 flex items-center bg-zinc-900/80 border border-zinc-800 rounded-[2.5rem] p-2 pr-4 backdrop-blur-xl transition-all duration-500">
+                    <div class="pl-6 text-zinc-500">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </div>
+                    <input 
+                        type="text" 
+                        x-model="query" 
+                        @keydown.enter="doSearch()"
+                        :placeholder="t('ya.placeholder')" 
+                        class="flex-grow bg-transparent border-none px-6 py-4 text-xl outline-none placeholder:text-zinc-700"
+                        autofocus
+                    >
+                    <button 
+                        @click="doSearch()"
+                        class="bg-white text-black px-8 py-3 rounded-[1.8rem] font-black hover:bg-zinc-200 transition-all active:scale-95"
+                        x-text="t('ya.button')"
+                    ></button>
+                </div>
+                <!-- Decorative blur -->
+                <div class="absolute -inset-4 bg-gradient-to-r from-yellow-500/10 to-red-500/10 blur-3xl opacity-0 group-focus-within:opacity-100 transition-opacity"></div>
+            </div>
+        </div>
+
+        <!-- Search Results -->
+        <div x-show="isSearchMode" class="w-full space-y-8 pb-12" x-cloak>
+            
+            <div x-show="loading" class="text-zinc-500 animate-pulse">Searching the mesh...</div>
+
+            <div x-show="!loading && results.length > 0" class="space-y-6">
+                <template x-for="r in results" :key="r.url">
+                    <div class="group max-w-2xl">
+                        <div class="flex items-center gap-2 mb-1">
+                            <div class="w-6 h-6 bg-zinc-800 rounded-full flex items-center justify-center text-xs">🌐</div>
+                            <span class="text-zinc-400 text-sm font-mono truncate" x-text="r.url"></span>
+                        </div>
+                        <a :href="r.url" class="block">
+                            <h3 class="text-blue-400 font-bold text-xl mb-1 group-hover:underline" x-text="r.title"></h3>
+                            <p class="text-zinc-400 text-sm leading-relaxed" x-text="r.desc"></p>
+                        </a>
+                    </div>
+                </template>
+            </div>
+
+            <div x-show="!loading && searched && results.length === 0" class="mt-8">
+                <p class="text-zinc-400 text-lg" x-html="t('ya.no_match').replace('%s', '<strong class=\'text-white\'>' + query + '</strong>')"></p>
+                <ul class="list-disc text-zinc-500 ml-6 mt-4 space-y-2">
+                    <li x-text="t('ya.check_spelling')"></li>
+                    <li x-text="t('ya.try_different')"></li>
+                    <li x-text="t('ya.try_general')"></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="p-8 border-t border-zinc-900 bg-zinc-950 text-center text-zinc-500 text-xs">
+        <span x-text="t('ya.footer')"></span>
+    </footer>
+
+    <script>
+        function yanApp() {
+            return {
+                query: '',
+                results: [],
+                searched: false,
+                loading: false,
+                isSearchMode: false,
+                translations: {},
+                
+                async init() {
+                    window.addEventListener('zypo-ready', () => this.onReady());
+                    window.addEventListener('popstate', () => this.handleRouting());
+                    if (window.zypo) this.onReady();
+                },
+
+                async onReady() {
+                    await this.loadTranslations();
+                    this.handleRouting();
+                },
+
+                async loadTranslations() {
+                    const lang = (window.zypo && window.zypo.language) || 'en';
+                    try {
+                        const resp = await fetch(`./locales/${lang}.json`);
+                        if (resp.ok) {
+                            this.translations = await resp.json();
+                        } else if (lang !== 'en') {
+                            const enResp = await fetch(`./locales/en.json`);
+                            if (enResp.ok) this.translations = await enResp.json();
+                        }
+                    } catch (e) { console.error("Failed to load translations:", e); }
+                },
+
+                handleRouting() {
+                    const params = new URLSearchParams(window.location.search);
+                    const q = params.get('q');
+                    if (q) {
+                        this.query = q;
+                        this.executeSearch(q, false);
+                    } else {
+                        this.isSearchMode = false;
+                        this.query = '';
+                        this.results = [];
+                        this.searched = false;
+                    }
+                },
+
+                goHome() {
+                    history.pushState({}, '', '/');
+                    this.handleRouting();
+                },
+
+                async doSearch() {
+                    if (!this.query.trim()) return;
+                    this.executeSearch(this.query, true);
+                },
+
+                async executeSearch(q, pushState) {
+                    this.isSearchMode = true;
+                    this.searched = true;
+                    this.loading = true;
+                    
+                    if (pushState) {
+                        const newUrl = '?q=' + encodeURIComponent(q);
+                        if (window.location.search !== newUrl) {
+                            history.pushState({q: q}, '', newUrl);
+                        }
+                    }
+
+                    try {
+                        const res = await fetch(`zypo://ya.rus/api/search?q=${encodeURIComponent(q)}`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            this.results = data.results || [];
+                        } else {
+                            this.results = [];
+                        }
+                    } catch (e) {
+                        console.error("Search failed", e);
+                        this.results = [];
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                t(path) {
+                    const keys = path.split('.');
+                    let res = this.translations;
+                    for (const k of keys) res = res ? res[k] : null;
+                    return res || path;
+                }
+            }
+        }
+    </script>
+</body>
+</html>

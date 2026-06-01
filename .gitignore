@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+go.sum
+
+# Compiled outputs
+dist/
+build/
+out/
+bin/
+*/bin/
+daemon
+*.exe
+*.app
+
+# Logs and PIDs
+*.log
+*.pid
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment and Secrets
+.env
+.env*
+*.bin
+*.pem
+*.key
+*.priv
+*_key.bin
+client_key.bin
+center_key.bin
+
+# Oracle Exclusion (Internal only)
+dot-zypo-control/
+run_control
+internal_docs/
+
+# Database / Storage / Dynamic Data
+data/
+*/data/
+*.json
+!package.json
+!tsconfig.json
+!*config.json
+!locales/*.json
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db

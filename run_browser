@@ -1,0 +1,23 @@
+#!/bin/bash
+# run_browser - Start the Zypo Browser Development Environment
+
+# Usage: ./run_browser [bootstrap_multiaddr]
+
+# Kill child processes on exit
+trap "kill 0" EXIT
+
+echo "Starting Zypo Browser (auto-restarting on .js/.html changes)..."
+
+# If bootstrap address is provided as 1st argument, export it
+if [ ! -z "$1" ]; then
+    export ZYPO_BOOTSTRAP="$1"
+    echo "Custom bootstrap set: $1"
+fi
+
+# Check if nodemon is installed
+if ! command -v nodemon &> /dev/null; then
+    echo "Warning: nodemon not found. Installing globally via npm..."
+    npm install -g nodemon
+fi
+
+cd dot-zypo-browser && nodemon --watch . --ignore dist/ --ext js,html,css --exec "npm start"

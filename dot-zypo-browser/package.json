@@ -1,0 +1,62 @@
+{
+  "name": "dot-zypo-browser",
+  "productName": "Zypo Browser",
+  "version": "1.1.0",
+  "description": "Decentralized P2P Web Browser",
+  "main": "index.js",
+  "scripts": {
+    "build:css": "npx tailwindcss -i ./src/tailwind.css -o ./dist/tailwind.css --minify",
+    "build:daemon": "mkdir -p bin && cd ../dot-zypo-client && go build -o ../dot-zypo-browser/bin/daemon main.go",
+    "copy:alpine": "node -e \"const fs=require('fs');fs.mkdirSync('dist',{recursive:true});fs.copyFileSync('node_modules/alpinejs/dist/cdn.min.js','dist/alpine.min.js');console.log('Alpine.js copied to dist/')\"",
+    "build": "npm run build:daemon && npm run build:css && npm run copy:alpine",
+    "start": "npm run build && electron .",
+    "dev": "electron .",
+    "build:mac": "npm run build && electron-builder --mac",
+    "build:win": "npm run build && electron-builder --win",
+    "build:linux": "npm run build && electron-builder --linux",
+    "build:all": "npm run build && electron-builder -mwl"
+  },
+  "build": {
+    "appId": "com.zypo.browser",
+    "productName": "Zypo Browser",
+    "asar": true,
+    "extraResources": [
+      {
+        "from": "bin",
+        "to": "bin",
+        "filter": ["**/*"]
+      }
+    ],
+    "files": [
+      "**/*",
+      "!src/**",
+      "!tailwind.config.js",
+      "!node_modules/tailwindcss/**",
+      "!node_modules/@tailwindcss/**"
+    ],
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": ["dmg", "zip"]
+    },
+    "win": {
+      "target": ["nsis", "portable"]
+    },
+    "linux": {
+      "target": ["AppImage", "deb"]
+    }
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "alpinejs": "^3.14.9"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.19",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.3"
+  }
+}

@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Zypo VPN</title>
+    <link rel="stylesheet" href="zb://dist/tailwind.css">
+    <script defer src="zb://dist/alpine.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+        
+        body { 
+            background-color: #050505; 
+            color: #ffffff; 
+            font-family: 'Outfit', sans-serif; 
+            overflow-x: hidden;
+        }
+        [x-cloak] { display: none !important; }
+        
+        /* Smooth Scrollbar */
+        .custom-scroll::-webkit-scrollbar { width: 4px; }
+        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #222; border-radius: 4px; }
+        
+        /* Glassmorphism basics */
+        .glass {
+            background: rgba(20, 20, 20, 0.4);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* Power Button */
+        .power-btn-container {
+            position: relative;
+            width: 180px;
+            height: 180px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 3rem auto;
+        }
+
+        .power-ring {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            border: 2px dashed rgba(255, 255, 255, 0.1);
+            transition: all 0.5s ease;
+        }
+
+        .status-connected .power-ring {
+            border-color: rgba(16, 185, 129, 0.3);
+            animation: spin 10s linear infinite;
+        }
+
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        .power-btn {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: linear-gradient(145deg, #1a1a1a, #0a0a0a);
+            box-shadow: 
+                20px 20px 60px #020202,
+                -20px -20px 60px #121212,
+                inset 0 0 0 2px rgba(255,255,255,0.05);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 10;
+        }
+
+        .status-disconnected .power-btn:hover {
+            box-shadow: 
+                0 0 25px rgba(255, 255, 255, 0.1),
+                inset 0 0 0 2px rgba(255,255,255,0.15);
+            transform: scale(1.03);
+        }
+
+        .status-disconnected .power-btn:active {
+            transform: scale(0.95);
+            transition: all 0.1s;
+        }
+
+        .status-connected .power-btn {
+            background: linear-gradient(145deg, #064e3b, #022c22);
+            box-shadow: 
+                0 0 40px rgba(16, 185, 129, 0.4),
+                inset 0 0 0 2px rgba(16, 185, 129, 0.5);
+            transform: scale(1.02);
+        }
+
+        .status-connected .power-btn:hover {
+            box-shadow: 
+                0 0 50px rgba(16, 185, 129, 0.5),
+                inset 0 0 0 2px rgba(16, 185, 129, 0.7);
+            transform: scale(1.05);
+        }
+        
+        .status-connected .power-btn:active {
+            transform: scale(0.95);
+            transition: all 0.1s;
+        }
+
+        .power-icon {
+            width: 40px;
+            height: 40px;
+            stroke: #666;
+            transition: all 0.4s ease;
+        }
+
+        .status-disconnected .power-btn:hover .power-icon { stroke: #fff; }
+        .status-connected .power-icon { stroke: #fff; filter: drop-shadow(0 0 8px rgba(255,255,255,0.5)); }
+
+        /* Background glow based on status */
+        .bg-glow {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            filter: blur(120px);
+            opacity: 0.15;
+            z-index: -1;
+            transition: background 0.8s ease;
+            pointer-events: none;
+        }
+
+        .status-disconnected .bg-glow { background: #3b82f6; }
+        .status-connected .bg-glow { background: #10b981; }
+
+        /* Toggle Switch */
+        .toggle-switch {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            background: #2a2a2a;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .toggle-switch.active { background: #10b981; }
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background: #fff;
+            border-radius: 50%;
+            transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+        }
+        .toggle-switch.active::after { transform: translateX(20px); }
+
+    </style>
+</head>
+<body class="selection:bg-emerald-500/30">
+    <div x-data="vpnApp()" x-init="init()" class="h-screen flex flex-col relative overflow-y-auto custom-scroll" x-cloak :class="vpnStatus.connection_state === 'connected' && vpnStatus.is_operational ? 'status-connected' : 'status-disconnected'">
+        
+        <div class="bg-glow"></div>
+
+        <!-- Top Bar -->
+        <header class="flex justify-between items-center p-6 shrink-0 z-20">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-2xl glass flex items-center justify-center">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                </div>
+                <h1 class="text-xl font-semibold tracking-wide" x-text="t('browser.vpn_title') || 'Zypo VPN'"></h1>
+            </div>
+            <div class="glass px-4 py-2 rounded-full flex items-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-zinc-400"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+                <span class="text-sm font-medium" x-text="balance"></span>
+                <span class="text-[10px] text-zinc-500 font-bold">ZPCN</span>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <div class="flex-1 pb-28 px-6 z-10 flex flex-col h-full">
+            
+            <!-- CONNECT TAB -->
+            <div x-show="tab === 'connect'" class="flex-1 flex flex-col items-center justify-center animate-in fade-in duration-300">
+                
+                <!-- Connection Status Text -->
+                <div class="text-center mb-8 h-16 w-full mt-auto">
+                    <template x-if="vpnStatus.connection_state !== 'connected'">
+                        <div>
+                            <div class="hidden text-zinc-500 text-sm tracking-widest uppercase font-medium mb-1" x-text="t('browser.vpn_connect')"></div>
+                            <div class="text-2xl font-light text-zinc-300" x-text="t('browser.vpn_status_disconnected')"></div>
+                        </div>
+                    </template>
+                    <template x-if="vpnStatus.connection_state === 'connected' && vpnStatus.is_operational">
+                        <div class="animate-in slide-in-from-bottom-2 fade-in">
+                            <div class="text-emerald-500 text-sm tracking-widest uppercase font-bold mb-1 flex items-center justify-center gap-2">
+                                <span class="relative flex h-2 w-2">
+                                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                    <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                </span>
+                                <span x-text="t('browser.vpn_status_connected')"></span>
+                            </div>
+                            <div class="text-2xl font-medium text-white" x-text="getSelectedNodeLocation()"></div>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Big Power Button -->
+                <div class="power-btn-container mb-4">
+                    <div class="power-ring"></div>
+                    <div class="power-btn" @click="toggleConnection()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="power-icon">
+                            <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+                            <line x1="12" y1="2" x2="12" y2="12"></line>
+                        </svg>
+                    </div>
+                </div>
+
+                <!-- Server Selector -->
+                <div class="w-full max-w-sm mt-8">
+                    <div class="glass rounded-3xl p-2 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-all duration-300 active:scale-95" @click="tab = 'servers'">
+                        <div class="flex items-center gap-4 px-2">
+                            <div class="w-10 h-10 rounded-full bg-black/30 flex items-center justify-center text-lg shadow-inner">
+                                <span x-text="getSelectedNodeFlag()"></span>
+                            </div>
+                            <div>
+                                <div class="text-xs text-zinc-500 font-medium tracking-wide uppercase" x-text="t('browser.network_node') || 'Location'"></div>
+                                <div class="text-base font-medium text-white" x-text="getSelectedNodeLocation()"></div>
+                            </div>
+                        </div>
+                        <div class="w-10 h-10 flex items-center justify-center text-zinc-500">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Connection Stats -->
+                <div class="flex items-center gap-8 mt-10 transition-opacity duration-500 mb-auto" :class="vpnStatus.connection_state === 'connected' ? 'opacity-100' : 'opacity-0 pointer-events-none'">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-500">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7 7 7-7"/></svg>
+                        </div>
+                        <div>
+                            <div class="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold" x-text="t('browser.vpn_diag_traffic_in')"></div>
+                            <div class="text-sm font-medium"><span x-text="(vpnStatus.bytes_received / (1024*1024)).toFixed(1)"></span> MB</div>
+                        </div>
+                    </div>
+                    <div class="w-px h-8 bg-white/10"></div>
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-500">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7-7 7 7"/></svg>
+                        </div>
+                        <div>
+                            <div class="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold" x-text="t('browser.vpn_diag_traffic_out')"></div>
+                            <div class="text-sm font-medium"><span x-text="(vpnStatus.bytes_sent / (1024*1024)).toFixed(1)"></span> MB</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- EARN TAB -->
+            <div x-show="tab === 'earn'" class="flex-1 flex flex-col animate-in fade-in duration-300 max-w-sm mx-auto w-full pt-4" style="display: none;">
+                <div class="text-center mb-8">
+                    <div class="w-16 h-16 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center mx-auto mb-4">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    </div>
+                    <h2 class="text-2xl font-bold mb-2" x-text="t('browser.vpn_share')"></h2>
+                    <p class="text-sm text-zinc-500 px-4" x-text="t('browser.vpn_share_desc')"></p>
+                </div>
+
+                <div class="glass rounded-3xl p-6 mb-6">
+                    <div class="flex items-center justify-between mb-8">
+                        <div>
+                            <div class="text-sm font-medium text-zinc-400 mb-1" x-text="t('browser.vpn_status') || 'Provider Status'"></div>
+                            <div class="flex items-center gap-2">
+                                <span class="relative flex h-2.5 w-2.5" x-show="isSharing">
+                                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                  <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                                </span>
+                                <span class="w-2.5 h-2.5 rounded-full bg-zinc-700" x-show="!isSharing"></span>
+                                <span class="text-base font-semibold" :class="isSharing ? 'text-emerald-400' : 'text-zinc-500'" x-text="isSharing ? (t('browser.vpn_active') || 'Active & Earning') : (t('browser.vpn_inactive') || 'Inactive')"></span>
+                            </div>
+                        </div>
+                        <div class="toggle-switch transition-all duration-300 active:scale-95" :class="isSharing ? 'active' : ''" @click="toggleSharing()"></div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="bg-black/40 rounded-2xl p-4">
+                            <div class="text-xs text-zinc-500 font-medium mb-1 flex items-center gap-1.5"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> <span x-text="t('browser.vpn_total_earned')"></span></div>
+                            <div class="text-2xl font-semibold"><span x-text="earned">0.00</span><span class="text-xs text-emerald-500 ml-1">ZPCN</span></div>
+                        </div>
+                        <div class="bg-black/40 rounded-2xl p-4">
+                            <div class="text-xs text-zinc-500 font-medium mb-1 flex items-center gap-1.5"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg> <span x-text="t('browser.vpn_traffic_relayed')"></span></div>
+                            <div class="text-2xl font-semibold"><span x-text="trafficOut">0</span><span class="text-xs text-blue-500 ml-1">MB</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SETTINGS TAB -->
+            <div x-show="tab === 'settings'" class="flex-1 flex flex-col animate-in fade-in duration-300 max-w-sm mx-auto w-full pt-4" style="display: none;">
+                <h2 class="text-2xl font-bold mb-6 text-center" x-text="t('browser.vpn_settings')"></h2>
+                
+                <div class="space-y-4">
+                    <div class="glass rounded-3xl p-2 space-y-1">
+                        <div class="bg-white/5 rounded-2xl p-4 flex items-center justify-between">
+                            <label class="text-sm font-medium text-zinc-300" x-text="t('browser.network_node_label') || 'Location Name'"></label>
+                            <input type="text" x-model="config.location" class="bg-transparent border-none text-white text-right text-sm focus:ring-0 outline-none w-32 placeholder-zinc-600" placeholder="My Node">
+                        </div>
+                        <div class="bg-white/5 rounded-2xl p-4 flex items-center justify-between">
+                            <label class="text-sm font-medium text-zinc-300">Emoji Flag</label>
+                            <input type="text" x-model="config.flag" class="bg-transparent border-none text-white text-right text-base focus:ring-0 outline-none w-16" placeholder="🌐">
+                        </div>
+                    </div>
+
+                    <div class="glass rounded-3xl p-2 space-y-1">
+                        <div class="bg-white/5 rounded-2xl p-4 flex items-center justify-between">
+                            <label class="text-sm font-medium text-zinc-300" x-text="t('browser.vpn_settings_price')"></label>
+                            <input type="number" step="0.1" x-model="config.price" class="bg-transparent border-none text-white text-right text-sm focus:ring-0 outline-none w-20">
+                        </div>
+                        <div class="bg-white/5 rounded-2xl p-4 flex items-center justify-between">
+                            <label class="text-sm font-medium text-zinc-300" x-text="t('browser.vpn_settings_bandwidth')"></label>
+                            <input type="number" x-model="config.bandwidth" class="bg-transparent border-none text-white text-right text-sm focus:ring-0 outline-none w-20">
+                        </div>
+                    </div>
+
+                    <div class="glass rounded-3xl p-2 space-y-1">
+                        <div class="bg-white/5 rounded-2xl p-4">
+                            <label class="text-xs font-medium text-zinc-500 block mb-1" x-text="t('browser.vpn_cc_addr')"></label>
+                            <div class="text-xs text-zinc-300 font-mono break-all opacity-80" x-text="config.ccAddr || 'None'"></div>
+                        </div>
+                        <div class="bg-white/5 rounded-2xl p-4">
+                            <label class="text-xs font-medium text-zinc-500 block mb-1" x-text="t('browser.vpn_settings_sig')"></label>
+                            <input type="text" x-model="config.signalingURL" class="w-full bg-transparent border-none text-white text-xs focus:ring-0 outline-none font-mono">
+                        </div>
+                    </div>
+
+                    <button @click="saveSettings()" class="w-full bg-white text-black font-semibold text-sm py-4 rounded-full mt-4 transition-all duration-300 active:scale-[0.98]" x-text="t('browser.vpn_settings_save')"></button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Bottom Navigation (Fixed) -->
+        <nav class="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-sm px-6 z-50">
+            <div class="glass rounded-full p-1.5 flex items-center justify-between shadow-2xl">
+                <button @click="tab = 'connect'" class="flex-1 py-2.5 rounded-full text-xs font-medium transition-all duration-300 active:scale-95 flex items-center justify-center gap-2" :class="tab === 'connect' ? 'bg-white/15 text-white shadow-sm' : 'text-zinc-500 hover:text-white'">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    <span x-text="t('browser.vpn_tab_connect') || 'VPN'"></span>
+                </button>
+                <button @click="tab = 'earn'" class="flex-1 py-2.5 rounded-full text-xs font-medium transition-all duration-300 active:scale-95 flex items-center justify-center gap-2" :class="tab === 'earn' ? 'bg-white/15 text-white shadow-sm' : 'text-zinc-500 hover:text-white'">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                    <span x-text="t('browser.vpn_tab_earn') || 'Earn'"></span>
+                </button>
+                <button @click="tab = 'settings'" class="flex-1 py-2.5 rounded-full text-xs font-medium transition-all duration-300 active:scale-95 flex items-center justify-center gap-2" :class="tab === 'settings' ? 'bg-white/15 text-white shadow-sm' : 'text-zinc-500 hover:text-white'">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                    <span x-text="t('browser.vpn_tab_settings') || 'Settings'"></span>
+                </button>
+            </div>
+        </nav>
+
+        <!-- Servers Overlay (Still an overlay because it's a modal picker) -->
+        <div x-show="tab === 'servers'" class="fixed inset-0 bg-black/90 backdrop-blur-xl z-[60] flex flex-col animate-in slide-in-from-bottom-full duration-300" style="display: none;">
+            <div class="p-6 flex items-center justify-between shrink-0 border-b border-white/5">
+                <h2 class="text-xl font-semibold" x-text="t('browser.network_node_label') || 'Select Location'"></h2>
+                <button @click="tab = 'connect'" class="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-zinc-400 hover:text-white transition-all duration-300 active:scale-95">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto custom-scroll p-4 space-y-2 pb-24">
+                <template x-for="node in nodes" :key="node.peer_id">
+                    <div class="glass rounded-2xl p-4 flex items-center justify-between cursor-pointer hover:bg-white/10 transition-all duration-300 active:scale-95 group"
+                         @click="selectNode(node); tab = 'connect'"
+                         :class="selectedNode?.peer_id === node.peer_id ? 'border-emerald-500/50 bg-emerald-500/5' : ''">
+                        <div class="flex items-center gap-4">
+                            <div class="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center text-2xl shadow-inner" x-text="node.flag"></div>
+                            <div>
+                                <div class="text-base font-medium text-white group-hover:text-emerald-400 transition-colors" x-text="node.location"></div>
+                                <div class="flex items-center gap-2 text-xs text-zinc-500 mt-1">
+                                    <span class="flex items-center gap-1"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" class="text-emerald-500"><circle cx="12" cy="12" r="10"/></svg> <span x-text="node.ping + ' ms'"></span></span>
+                                    <span>•</span>
+                                    <span x-text="node.price + ' Z/GB'"></span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all"
+                             :class="selectedNode?.peer_id === node.peer_id ? 'border-emerald-500' : 'border-zinc-700'">
+                            <div class="w-3 h-3 rounded-full bg-emerald-500 transition-transform scale-0"
+                                 :class="selectedNode?.peer_id === node.peer_id ? 'scale-100' : ''"></div>
+                        </div>
+                    </div>
+                </template>
+                <div x-show="nodes.length === 0" class="text-center py-12">
+                    <div class="inline-block w-6 h-6 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin mb-4"></div>
+                    <div class="text-sm text-zinc-500 font-medium" x-text="t('browser.vpn_searching') || 'Discovering nodes...'"></div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="zb://js/vpn.js"></script>
+    <script src="zb://js/sdk.js"></script>
+    <script>
+        function vpnApp() {
+            return {
+                tab: 'connect',
+                balance: 0,
+                peerID: '',
+                isSharing: false,
+                earned: 0.00,
+                trafficOut: 0,
+                nodes: [],
+                selectedNode: null,
+                initialized: false,
+                i18n: {},
+                vpnStatus: {
+                    connection_state: 'disconnected',
+                    signaling_state: 'closed',
+                    bytes_sent: 0,
+                    bytes_received: 0,
+                    provider_id: null,
+                    is_operational: false
+                },
+                economy_status: 'synced',
+                config: {
+                    location: 'Decentralized Node',
+                    flag: '🌐',
+                    price: 0.5,
+                    bandwidth: 100,
+                    signalingURL: 'ws://localhost:8905/ws',
+                    clientRpcUrl: 'http://127.0.0.1:8902',
+                    rpcToken: '',
+                    stunServers: 'stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302'
+                },
+
+                async init() {
+                    if (this.initialized) return;
+                    try {
+                        try {
+                            const electron = require('electron');
+                            this._ipc = electron.ipcRenderer;
+                        } catch(e) {}
+
+                        if (window.Zypo && Zypo._initialized) {
+                            await this.onSdkReady();
+                        } else {
+                            window.addEventListener('zypo-sdk-ready', () => this.onSdkReady());
+                            if(window.Zypo) await Zypo.init();
+                        }
+                        
+                        setInterval(() => this.refreshData(), 3000);
+                        setInterval(() => this.fetchNodes(), 15000);
+                        setInterval(() => this.updateStats(), 1000);
+
+                        this.initialized = true;
+                    } catch (e) {
+                        console.error('Failed to initialize VPN page:', e);
+                    }
+                },
+
+                async onSdkReady() {
+                    this.i18n = Zypo.getTranslations();
+                    try {
+                        const settings = await this._ipc.invoke('get-settings');
+                        if (settings.commandCenterAddr) {
+                            this.config.ccAddr = settings.commandCenterAddr;
+                            this.config.clientRpcUrl = `http://127.0.0.1:8902`;
+                            if (settings.commandCenterAddr.includes('/ip4/')) {
+                                const ip = settings.commandCenterAddr.split('/ip4/')[1].split('/')[0];
+                                this.config.signalingURL = `ws://${ip}:8905/ws`;
+                            }
+                        }
+                    } catch(e) {}
+
+                    await this.refreshData();
+                    await this.fetchNodes();
+                },
+
+                async refreshData() {
+                    if(!window.Zypo) return;
+                    try {
+                        const data = await Zypo.getStatus();
+                        if (data) {
+                            const prevStatus = this.economy_status;
+                            this.economy_status = data.economy_status;
+                            if (data.economy_status === 'offline' && prevStatus === 'synced') {
+                                window.Zypo.daemonFetch('/rpc/network/reconnect', { method: 'POST' });
+                                this.economy_status = 'syncing';
+                            }
+                            this.balance = data.balance !== undefined ? data.balance : 0;
+                            this.peerID = data.peer_id || "unknown";
+                        }
+                        
+                        try {
+                            const vpnResp = await Zypo.daemonFetch('/rpc/vpn/status');
+                            const vpnData = await vpnResp.json();
+                            if (vpnData) this.vpnStatus = vpnData;
+                        } catch(e) {}
+                        
+                        if (window.zypoVPN && !window.zypoVPN.isInitialized) {
+                            const port = await Zypo.getRpcPort();
+                            const token = await Zypo.getRpcToken();
+                            await window.zypoVPN.init(this.peerID, `http://127.0.0.1:${port}`, token, this.config.signalingURL);
+                            window.zypoVPN.isInitialized = true;
+                        }
+                    } catch(e) {}
+                },
+
+                updateStats() {
+                    if (window.zypoVPN && this.isSharing) {
+                        const stats = window.zypoVPN.getStats();
+                        if (stats) {
+                            this.earned = stats.earned.toFixed(2);
+                            this.trafficOut = (stats.trafficOut / (1024 * 1024)).toFixed(2);
+                        }
+                    }
+                },
+
+                t(key) {
+                    const parts = key.split('.');
+                    let obj = this.i18n;
+                    for (const p of parts) { if (!obj) return key; obj = obj[p]; }
+                    return obj || key;
+                },
+
+                async fetchNodes() {
+                    if(!window.Zypo) return;
+                    try {
+                        const resp = await Zypo.daemonFetch('/rpc/vpn/list_nodes');
+                        const rawNodes = await resp.json();
+                        
+                        this.nodes = await Promise.all(rawNodes
+                            .filter(n => n.peer_id !== this.peerID)
+                            .map(async n => {
+                                n.ping = Math.floor(Math.random() * 80) + 15; 
+                                n.secure = true;
+                                return n;
+                            })
+                        );
+                        
+                        if(this.nodes.length > 0 && !this.selectedNode) {
+                            this.selectedNode = this.nodes[0];
+                        }
+                    } catch(e) {}
+                },
+
+                selectNode(node) { this.selectedNode = node; },
+
+                getSelectedNodeLocation() {
+                    if (this.vpnStatus.provider_id) {
+                        const active = this.nodes.find(n => n.peer_id === this.vpnStatus.provider_id);
+                        if (active) return active.location;
+                    }
+                    if (this.selectedNode) return this.selectedNode.location;
+                    return 'Auto Location';
+                },
+
+                getSelectedNodeFlag() {
+                    if (this.vpnStatus.provider_id) {
+                        const active = this.nodes.find(n => n.peer_id === this.vpnStatus.provider_id);
+                        if (active) return active.flag;
+                    }
+                    if (this.selectedNode) return this.selectedNode.flag;
+                    return '🌐';
+                },
+
+                async toggleConnection() {
+                    if (this.vpnStatus.connection_state === 'connected') {
+                        await this.disconnect();
+                    } else {
+                        if (!this.selectedNode && this.nodes.length > 0) this.selectedNode = this.nodes[0];
+                        if (this.selectedNode) {
+                            await this.connect(this.selectedNode);
+                        } else {
+                            if(this._ipc) this._ipc.sendToHost('zypo-alert', 'VPN', 'No nodes available', 'warning');
+                        }
+                    }
+                },
+
+                async toggleSharing() {
+                    this.isSharing = !this.isSharing;
+                    if (window.zypoVPN) {
+                        if (this.isSharing) {
+                            window.zypoVPN.config = { ...this.config };
+                            await window.zypoVPN.startSharing();
+                        } else {
+                            await window.zypoVPN.stopSharing();
+                        }
+                    }
+                },
+
+                async saveSettings() {
+                    if (window.zypoVPN) await window.zypoVPN.init(this.peerID, this.config.clientRpcUrl, this.config.rpcToken, this.config.signalingURL);
+                    try {
+                        await Zypo.daemonFetch('/rpc/vpn/config', {
+                            method: 'POST',
+                            body: {
+                                location: this.config.location,
+                                flag: this.config.flag,
+                                price: parseFloat(this.config.price),
+                                bandwidth: parseInt(this.config.bandwidth)
+                            }
+                        });
+                    } catch(e) {}
+                    if(this._ipc) this._ipc.sendToHost('zypo-alert', 'Settings Saved', 'Provider configuration updated successfully', 'success');
+                    this.tab = 'connect'; // Go back to main
+                },
+
+                async connect(node) {
+                    try {
+                        const res = await Zypo.daemonFetch('/rpc/vpn/connect', { method: 'POST', body: { provider_id: node.peer_id } });
+                        const data = await res.json();
+                        if (!data.success) throw new Error(data.error || 'Connection rejected');
+                        
+                        this.vpnStatus.connection_state = 'connected';
+                        this.vpnStatus.is_operational = true;
+                        this.vpnStatus.provider_id = node.peer_id;
+                    } catch(e) { 
+                        if(this._ipc) this._ipc.sendToHost('zypo-alert', 'VPN Error', e.message, 'error');
+                    }
+                },
+
+                async disconnect() {
+                    try {
+                        await Zypo.daemonFetch('/rpc/vpn/disconnect', { method: 'POST' });
+                        this.vpnStatus.connection_state = 'disconnected';
+                        this.vpnStatus.is_operational = false;
+                        await this.refreshData();
+                    } catch(e) {}
+                }
+            }
+        }
+    </script>
+</body>
+</html>

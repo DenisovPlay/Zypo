@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Browser Settings</title>
+    <link rel="stylesheet" href="zb://dist/tailwind.css">
+    <script defer src="zb://dist/alpine.min.js"></script>
+    <style>
+        body { background: #000; color: #fff; font-family: sans-serif; }
+        .sidebar-item.active { background: #27272a; color: #fff; }
+        .sidebar-item { color: #a1a1aa; transition: all 0.2s; cursor: pointer; }
+        .sidebar-item:hover:not(.active) { background: #18181b; color: #d4d4d8; }
+        [x-cloak] { display: none !important; }
+    </style>
+</head>
+<body 
+    x-data="settingsData()"
+    x-effect="document.title = t('settings.title')"
+    class="h-screen flex flex-col overflow-hidden"
+>
+    <div class="flex flex-1 overflow-hidden">
+        <!-- Sidebar -->
+        <div class="w-64 bg-zinc-900/50 border-r border-zinc-800 p-4 space-y-2">
+            <h1 class="text-xl font-bold px-4 mb-6" x-text="t('settings.title')"></h1>
+            <div @click="page = 'general'" :class="page === 'general' ? 'active' : ''" class="sidebar-item px-4 py-2 rounded-xl flex items-center space-x-3">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+                <span class="font-medium" x-text="t('settings.general')"></span>
+            </div>
+            <div @click="page = 'search'" :class="page === 'search' ? 'active' : ''" class="sidebar-item px-4 py-2 rounded-xl flex items-center space-x-3">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                <span class="font-medium" x-text="t('settings.search')"></span>
+            </div>
+            <div @click="page = 'network'" :class="page === 'network' ? 'active' : ''" class="sidebar-item px-4 py-2 rounded-xl flex items-center space-x-3">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
+                <span class="font-medium" x-text="t('settings.network')"></span>
+            </div>
+            <div @click="page = 'privacy'" :class="page === 'privacy' ? 'active' : ''" class="sidebar-item px-4 py-2 rounded-xl flex items-center space-x-3">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                <span class="font-medium" x-text="t('settings.privacy')"></span>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div class="flex-1 p-12 overflow-y-auto bg-black">
+            <!-- General -->
+            <div x-show="page === 'general'" class="space-y-8 max-w-2xl">
+                <div>
+                    <h2 class="text-3xl font-black mb-2" x-text="t('settings.general')"></h2>
+                </div>
+                
+                <div class="space-y-4">
+                    <!-- Language -->
+                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                        <div>
+                            <div class="font-bold text-lg" x-text="t('settings.language')"></div>
+                            <div class="text-sm text-zinc-500" x-text="t('settings.language_desc')"></div>
+                        </div>
+                        <select 
+                            x-model="settings.language" 
+                            @change="updateSetting('language', $event.target.value)"
+                            class="bg-black border border-zinc-700 rounded-xl px-4 py-2 text-sm outline-none focus:border-blue-500 transition-colors"
+                        >
+                            <option value="en">English</option>
+                            <option value="ru">Русский</option>
+                        </select>
+                    </div>
+
+                    <!-- Home Page -->
+                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                        <div>
+                            <div class="font-bold text-lg" x-text="t('settings.home_page')"></div>
+                            <div class="text-sm text-zinc-500" x-text="t('settings.home_page_desc')"></div>
+                        </div>
+                        <input 
+                            type="text" 
+                            x-model="settings.homePage"
+                            @change="updateSetting('homePage', $event.target.value)"
+                            placeholder="zypo://gov.zypo" 
+                            class="bg-black border border-zinc-700 rounded-xl px-4 py-2 text-sm outline-none focus:border-blue-500 transition-colors min-w-[200px]"
+                        >
+                    </div>
+
+
+                    <!-- Startup Action -->
+                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                        <div>
+                            <div class="font-bold text-lg" x-text="t('settings.startup_action')"></div>
+                            <div class="text-sm text-zinc-500" x-text="t('settings.startup_action_desc')"></div>
+                        </div>
+                        <select 
+                            x-model="settings.startupAction"
+                            @change="updateSetting('startupAction', $event.target.value)"
+                            class="bg-black border border-zinc-700 rounded-xl px-4 py-2 text-sm outline-none focus:border-blue-500 transition-colors"
+                        >
+                            <option value="newtab" x-text="t('settings.startup_newtab')"></option>
+                            <option value="continue" x-text="t('settings.startup_continue')"></option>
+                            <option value="specific" x-text="t('settings.startup_specific')"></option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Search -->
+            <div x-show="page === 'search'" x-cloak class="space-y-8 max-w-2xl">
+                <div>
+                    <h2 class="text-3xl font-black mb-2" x-text="t('settings.search')"></h2>
+                </div>
+                
+                <div class="space-y-4">
+                    <!-- Enable Search -->
+                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                        <div>
+                            <div class="font-bold text-lg" x-text="t('settings.enable_search')"></div>
+                            <div class="text-sm text-zinc-500" x-text="t('settings.enable_search_desc')"></div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" x-model="settings.enableSearch" @change="updateSetting('enableSearch', settings.enableSearch)" class="sr-only peer">
+                            <div class="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                        </label>
+                    </div>
+
+                    <!-- Search Engine -->
+                    <div x-show="settings.enableSearch !== false" class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                        <div>
+                            <div class="font-bold text-lg" x-text="t('settings.search_engine')"></div>
+                            <div class="text-sm text-zinc-500" x-text="t('settings.search_engine_desc')"></div>
+                        </div>
+                        <input 
+                            type="text" 
+                            x-model="settings.searchEngine"
+                            @change="updateSetting('searchEngine', $event.target.value)"
+                            placeholder="ya.rus" 
+                            class="bg-black border border-zinc-700 rounded-xl px-4 py-2 text-sm outline-none focus:border-blue-500 transition-colors min-w-[200px]"
+                        >
+                    </div>
+                </div>
+            </div>
+
+            <!-- Network -->
+            <div x-show="page === 'network'" x-cloak class="space-y-8 max-w-2xl">
+                <div>
+                    <h2 class="text-3xl font-black mb-2" x-text="t('settings.network')"></h2>
+                </div>
+
+                <div class="space-y-4">
+                    <!-- Enable Mesh -->
+                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                        <div>
+                            <div class="font-bold text-lg" x-text="t('settings.enable_mesh')"></div>
+                            <div class="text-sm text-zinc-500" x-text="t('settings.enable_mesh_desc')"></div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" checked class="sr-only peer">
+                            <div class="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                        </label>
+                    </div>
+
+                    <!-- Bootstrap Nodes -->
+                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                        <div>
+                            <div class="font-bold text-lg" x-text="t('settings.bootstrap_nodes')"></div>
+                            <div class="text-sm text-zinc-500" x-text="t('settings.bootstrap_nodes_desc')"></div>
+                        </div>
+                        <button class="bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl px-4 py-2 text-sm font-medium transition-colors" x-text="t('settings.edit_list')">
+                        </button>
+                    </div>
+
+                    <!-- Command Center Address -->
+                    <div class="p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem] space-y-3">
+                        <div>
+                            <div class="font-bold text-lg" x-text="t('settings.command_center_addr')"></div>
+                            <div class="text-sm text-zinc-500" x-text="t('settings.command_center_addr_desc')"></div>
+                        </div>
+                        <input
+                            type="text"
+                            x-model="commandCenterAddr"
+                            placeholder="/ip4/.../tcp/8900/p2p/12D3Koo..."
+                            class="w-full bg-black border border-zinc-700 rounded-xl px-4 py-3 text-sm text-zinc-200 font-mono outline-none focus:border-blue-500 transition-all"
+                        >
+                        <button
+                            @click="saveCommandCenter()"
+                            class="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold rounded-xl transition-colors"
+                            :class="commandCenterSaved ? 'bg-green-600' : ''"
+                            x-text="commandCenterSaved ? t('settings.saved_restarting') : t('settings.save_apply')"
+                        ></button>
+                    </div>
+
+                    <!-- RPC Token -->
+                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                        <div>
+                            <div class="font-bold text-lg" x-text="t('settings.rpc_token')"></div>
+                            <div class="text-sm text-zinc-500" x-text="t('settings.rpc_token_desc')"></div>
+                        </div>
+                        <div class="bg-black border border-zinc-700 rounded-xl px-4 py-2 text-sm text-zinc-300 font-mono" x-text="rpcToken || t('browser.loading')">
+                        </div>
+                    </div>
+
+                    <!-- Daemon Status -->
+                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                        <div>
+                            <div class="font-bold text-lg" x-text="t('settings.daemon_status')"></div>
+                            <div class="text-sm text-zinc-500" x-text="t('settings.daemon_status_desc')"></div>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <span class="relative flex h-3 w-3">
+                              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                              <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                            </span>
+                            <span class="text-emerald-400 font-medium" x-text="t('settings.daemon_active')"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Privacy -->
+            <div x-show="page === 'privacy'" x-cloak class="space-y-8 max-w-2xl">
+                <div>
+                    <h2 class="text-3xl font-black mb-2" x-text="t('settings.privacy')"></h2>
+                </div>
+                
+                <div class="space-y-4">
+                    <!-- Block Ads -->
+                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                        <div>
+                            <div class="font-bold text-lg" x-text="t('settings.block_ads')"></div>
+                            <div class="text-sm text-zinc-500" x-text="t('settings.block_ads_desc')"></div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" checked class="sr-only peer">
+                            <div class="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                        </label>
+                    </div>
+
+                    <!-- Do Not Track -->
+                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                        <div>
+                            <div class="font-bold text-lg" x-text="t('settings.do_not_track')"></div>
+                            <div class="text-sm text-zinc-500" x-text="t('settings.do_not_track_desc')"></div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" checked class="sr-only peer">
+                            <div class="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                        </label>
+                    </div>
+
+                    <!-- Clear Cookies -->
+                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                        <div>
+                            <div class="font-bold text-lg" x-text="t('settings.clear_cookies')"></div>
+                            <div class="text-sm text-zinc-500" x-text="t('settings.clear_cookies_desc')"></div>
+                        </div>
+                        <button 
+                            @click="clearHistory()"
+                            class="bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl px-4 py-2 text-sm font-medium transition-colors"
+                            x-text="t('settings.clear_button')"
+                        >
+                        </button>
+                    </div>
+
+                    <!-- Clear History -->
+                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                        <div>
+                            <div class="font-bold text-lg" x-text="t('settings.clear_history')"></div>
+                            <div class="text-sm text-zinc-500" x-text="t('settings.clear_history_desc')"></div>
+                        </div>
+                        <button 
+                            @click="clearHistory()"
+                            class="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white border border-red-500/20 rounded-xl px-4 py-2 text-sm font-medium transition-colors"
+                            x-text="t('settings.clear_button')"
+                        >
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /*INJECT_SETTINGS*/
+        window.SETTINGS = window.SETTINGS || { language: 'en', startupAction: 'newtab', homePage: 'zb://newtab', commandCenterAddr: '', searchEngine: 'ya.rus', enableSearch: true };
+
+        function settingsData() {
+            return {
+                page: 'general',
+                settings: window.SETTINGS,
+                i18n: {},
+                rpcToken: '',
+                commandCenterAddr: '',
+                commandCenterSaved: false,
+                
+                async init() {
+                    const { ipcRenderer } = require('electron');
+                    this.commandCenterAddr = this.settings.commandCenterAddr || '';
+                    
+                    // 1. Load translations first
+                    await this.loadTranslations();
+                    
+                    // 2. Fetch runtime data
+                    this.rpcToken = await ipcRenderer.invoke('get-rpc-token');
+                    
+                    // 3. Listen for global settings changes
+                    ipcRenderer.on('settings-updated', async () => {
+                        this.settings = await ipcRenderer.invoke('get-settings');
+                        await this.loadTranslations();
+                    });
+                },
+
+                async loadTranslations() {
+                    const { ipcRenderer } = require('electron');
+                    this.i18n = await ipcRenderer.invoke('get-translations', this.settings.language);
+                },
+
+                t(path) {
+                    const keys = path.split('.');
+                    let result = this.i18n;
+                    for (const key of keys) { result = result ? result[key] : null; }
+                    return result || path;
+                },
+
+                async updateSetting(key, value) {
+                    const { ipcRenderer } = require('electron');
+                    this.settings[key] = value;
+                    await ipcRenderer.invoke('update-settings', { [key]: value });
+                    if (key === 'language') {
+                        await this.loadTranslations();
+                        ipcRenderer.send('notify-settings-updated');
+                    }
+                },
+
+                async saveCommandCenter() {
+                    const { ipcRenderer } = require('electron');
+                    // Will trigger daemon restart if address changed
+                    await ipcRenderer.invoke('update-settings', { commandCenterAddr: this.commandCenterAddr });
+                    this.settings.commandCenterAddr = this.commandCenterAddr;
+                    this.commandCenterSaved = true;
+                    setTimeout(() => { this.commandCenterSaved = false; }, 4000);
+                },
+
+                async clearHistory() {
+                    const { ipcRenderer } = require('electron');
+                    ipcRenderer.send('clear-history');
+                    ipcRenderer.sendToHost('zypo-alert', this.t('settings.history_cleared') || 'History Cleared', 'Your browsing history has been cleared.', 'info');
+                }
+            }
+        }
+
+    </script>
+</body>
+</html>

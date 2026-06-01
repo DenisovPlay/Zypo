@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>History</title>
+    <link rel="stylesheet" href="zb://dist/tailwind.css">
+    <script defer src="zb://dist/alpine.min.js"></script>
+    <style>
+        body { background: #000; color: #fff; font-family: sans-serif; }
+        [x-cloak] { display: none !important; }
+    </style>
+</head>
+<body 
+    x-data="historyData()"
+    x-effect="document.title = t('history.title')"
+    class="min-h-screen flex flex-col items-center pt-16 px-8"
+>
+    <div class="w-full max-w-2xl">
+        <div class="flex items-center justify-between mb-8">
+            <h1 class="text-4xl font-black" x-text="t('history.title')"></h1>
+            <button 
+                @click="clearHistory()" 
+                class="px-6 py-2 bg-red-500/10 text-red-500 border border-red-500/20 rounded-full font-bold text-xs hover:bg-red-500 hover:text-white transition-all"
+                x-show="history.length > 0"
+                x-text="t('history.clear_button')"
+            >
+            </button>
+        </div>
+        
+        <div class="relative mb-8">
+            <input 
+                type="text" 
+                x-model="query" 
+                :placeholder="t('history.search')" 
+                class="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-6 py-4 text-white outline-none focus:border-blue-500 transition-all shadow-inner"
+            >
+        </div>
+
+        <div class="bg-zinc-900/50 border border-zinc-800 rounded-[2.5rem] overflow-hidden shadow-2xl">
+            <template x-if="filtered.length === 0">
+                <div class="p-12 text-center text-zinc-500 font-medium" x-text="query ? t('history.no_results') : t('history.empty')"></div>
+            </template>
+
+            <div class="divide-y divide-zinc-800">
+                <template x-for="h in filtered" :key="h.time">
+                    <div class="flex items-center justify-between p-6 hover:bg-white/[0.02] transition-colors group">
+                        <div class="flex flex-col gap-1 min-w-0 pr-4">
+                            <a :href="h.url" class="text-lg font-bold text-white hover:text-blue-400 transition-colors truncate" x-text="h.title || h.url"></a>
+                            <span class="text-xs font-mono text-zinc-500 truncate" x-text="h.url"></span>
+                        </div>
+                        <div class="text-[10px] uppercase font-black text-zinc-600 whitespace-nowrap" x-text="formatTime(h.time)"></div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <!-- Unified Modal System -->
+    <div 
+        x-show="modal.open" 
+        x-cloak
+        class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm"
+        x-transition.opacity
+    >
+        <div 
+            class="bg-[#18181b] border border-zinc-800 w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl"
+            x-transition.scale
+            @click.away="modal.open = false"
+        >
+            <h3 class="text-2xl font-black mb-2" x-text="modal.title"></h3>
+            <p class="text-zinc-500 text-sm mb-6" x-text="modal.desc"></p>
+            
+            <div class="flex gap-3">
+                <button @click="modal.open = false" class="flex-1 px-6 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-2xl font-bold duration-300 text-sm text-zinc-300 active:scale-95" x-text="t('newtab.cancel')"></button>
+                <button @click="executeClear()" class="flex-1 px-6 py-3 bg-red-600 hover:bg-red-500 text-white rounded-2xl font-bold duration-300 text-sm active:scale-95" x-text="t('history.clear_button')"></button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /*INJECT_HISTORY*/
+        window.HISTORY = window.HISTORY || [];
+
+        function historyData() {
+            return {
+                query: '',
+                history: window.HISTORY,
+                modal: { open: false, title: '', desc: '' },
+                i18n: {},
+                get filtered() {
+                    if (!this.query) return this.history;
+                    return this.history.filter(h => 
+                        h.title.toLowerCase().includes(this.query.toLowerCase()) || 
+                        h.url.toLowerCase().includes(this.query.toLowerCase())
+                    );
+                },
+                async init() {
+                    const { ipcRenderer } = require('electron');
+                    await this.loadTranslations();
+                    ipcRenderer.on('settings-updated', () => this.loadTranslations());
+                },
+                async loadTranslations() {
+                    const { ipcRenderer } = require('electron');
+                    const settings = await ipcRenderer.invoke('get-settings');
+                    this.i18n = await ipcRenderer.invoke('get-translations', settings.language);
+                },
+                t(path) {
+                    const keys = path.split('.');
+                    let result = this.i18n;
+                    for (const key of keys) { result = result ? result[key] : null; }
+                    return result || path;
+                },
+                clearHistory() {
+                    this.modal.title = this.t('history.confirm_clear_title');
+                    this.modal.desc = this.t('history.confirm_clear');
+                    this.modal.open = true;
+                },
+                executeClear() {
+                    window.location.href = 'zb://clear-history';
+                    this.modal.open = false;
+                },
+                formatTime(t) {
+                    return new Date(t).toLocaleString();
+                }
+            }
+        }
+    </script>
+</body>
+</html>

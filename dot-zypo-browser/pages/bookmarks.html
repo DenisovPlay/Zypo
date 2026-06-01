@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Bookmarks</title>
+    <link rel="stylesheet" href="zb://dist/tailwind.css">
+    <script defer src="zb://dist/alpine.min.js"></script>
+    <style>
+        body { background: #000; color: #fff; font-family: sans-serif; }
+        [x-cloak] { display: none !important; }
+    </style>
+</head>
+<body 
+    x-data="bookmarksData()"
+    x-effect="document.title = t('bookmarks.title')"
+    class="min-h-screen flex flex-col items-center pt-16 px-8"
+>
+    <div class="w-full max-w-2xl">
+        <h1 class="text-4xl font-black mb-8" x-text="t('bookmarks.title')"></h1>
+        
+        <div class="relative mb-8">
+            <input 
+                type="text" 
+                x-model="query" 
+                :placeholder="t('bookmarks.search')" 
+                class="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-6 py-4 text-white outline-none focus:border-blue-500 transition-all shadow-inner"
+            >
+        </div>
+
+        <div class="bg-zinc-900/50 border border-zinc-800 rounded-[2.5rem] overflow-hidden shadow-2xl">
+            <template x-if="filtered.length === 0">
+                <div class="p-12 text-center text-zinc-500 font-medium" x-text="query ? t('bookmarks.no_results') : t('bookmarks.empty')"></div>
+            </template>
+
+            <div class="divide-y divide-zinc-800">
+                <template x-for="b in filtered" :key="b.url">
+                    <div class="flex items-center justify-between p-6 hover:bg-white/[0.02] transition-colors group">
+                        <div class="flex flex-col gap-1 min-w-0 pr-4">
+                            <a :href="b.url" class="text-lg font-bold text-white hover:text-blue-400 transition-colors truncate" x-text="b.title || b.url"></a>
+                            <span class="text-xs font-mono text-zinc-500 truncate" x-text="b.url"></span>
+                        </div>
+                        <button 
+                            @click="deleteBookmark(b.url)" 
+                            class="px-4 py-2 bg-red-500/10 text-red-500 border border-red-500/20 rounded-xl font-bold text-xs hover:bg-red-500 hover:text-white transition-all opacity-0 group-hover:opacity-100"
+                            x-text="t('bookmarks.delete')"
+                        >
+                        </button>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /*INJECT_BOOKMARKS*/
+        window.BOOKMARKS = window.BOOKMARKS || [];
+
+        function bookmarksData() {
+            return {
+                query: '',
+                bookmarks: window.BOOKMARKS,
+                i18n: {},
+                get filtered() {
+                    if (!this.query) return this.bookmarks;
+                    return this.bookmarks.filter(b => 
+                        b.title.toLowerCase().includes(this.query.toLowerCase()) || 
+                        b.url.toLowerCase().includes(this.query.toLowerCase())
+                    );
+                },
+                async init() {
+                    const { ipcRenderer } = require('electron');
+                    await this.loadTranslations();
+                    ipcRenderer.on('settings-updated', () => this.loadTranslations());
+                },
+                async loadTranslations() {
+                    const { ipcRenderer } = require('electron');
+                    const settings = await ipcRenderer.invoke('get-settings');
+                    this.i18n = await ipcRenderer.invoke('get-translations', settings.language);
+                },
+                t(path) {
+                    const keys = path.split('.');
+                    let result = this.i18n;
+                    for (const key of keys) { result = result ? result[key] : null; }
+                    return result || path;
+                },
+                deleteBookmark(url) {
+                    window.location.href = `zb://delete-bookmark?url=${encodeURIComponent(url)}`;
+                }
+            }
+        }
+    </script>
+</body>
+</html>

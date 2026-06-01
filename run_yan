@@ -1,0 +1,2 @@
+#!/bin/bash
+cd dot-zypo-yan && go run . "$@"

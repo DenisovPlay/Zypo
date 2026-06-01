@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>About Zypo</title>
+    <link rel="stylesheet" href="zb://dist/tailwind.css">
+    <script defer src="zb://dist/alpine.min.js"></script>
+    <style>
+        body { background: #000; color: #fff; font-family: sans-serif; }
+        [x-cloak] { display: none !important; }
+    </style>
+</head>
+<body 
+    x-data="aboutData()"
+    x-effect="document.title = t('about.title')"
+    class="min-h-screen flex flex-col items-center pt-24 px-8"
+>
+    <div class="w-full max-w-xl text-center">
+        <h1 class="text-5xl font-black mb-2 tracking-tighter" x-text="t('about.title')"></h1>
+        <p class="text-zinc-500 font-bold mb-12 uppercase tracking-[0.2em] text-xs" x-text="t('about.version')"></p>
+        
+        <div class="bg-zinc-900/50 border border-zinc-800 rounded-[2.5rem] overflow-hidden shadow-2xl mb-8">
+            <div class="divide-y divide-zinc-800">
+                <template x-for="(value, key) in info" :key="key">
+                    <div class="flex items-center justify-between p-6 hover:bg-white/[0.02] transition-colors">
+                        <span class="text-sm font-bold text-zinc-500 uppercase tracking-wider" x-text="key"></span>
+                        <span class="text-sm font-mono text-white" x-text="value"></span>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-center gap-4">
+            <button 
+                @click="exportKey()" 
+                :disabled="loading"
+                class="group relative inline-flex items-center gap-3 px-8 py-4 bg-zinc-900 border border-zinc-800 text-white rounded-2xl font-black transition-all hover:bg-zinc-800 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
+            >
+                <svg class="w-5 h-5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                <span x-text="t('about.export_button')"></span>
+            </button>
+
+            <button 
+                @click="importKey()" 
+                :disabled="loading"
+                class="group relative inline-flex items-center gap-3 px-8 py-4 bg-white text-black rounded-2xl font-black transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
+            >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                <span x-text="t('about.import_button')"></span>
+            </button>
+        </div>
+
+        <div 
+            x-show="msg" 
+            x-cloak
+            x-transition 
+            class="mt-6 font-bold text-sm" 
+            :class="error ? 'text-red-500' : 'text-green-500'" 
+            x-text="msg"
+        ></div>
+    </div>
+
+    <script>
+        /*INJECT_SYSINFO*/
+        window.SYSINFO = window.SYSINFO || { 'Zypo Core': 'v1.1.0-alpha', 'Electron': '...', 'OS Arch': '...', 'Platform': '...' };
+
+        function aboutData() {
+            return {
+                info: {},
+                msg: '',
+                error: false,
+                loading: false,
+                i18n: {},
+                async init() {
+                    const { ipcRenderer } = require('electron');
+                    await this.loadTranslations();
+                    
+                    const sysinfo = window.SYSINFO || {};
+                    this.info = {
+                        [this.t('about.sysinfo_core')]: sysinfo['Zypo Core'],
+                        [this.t('about.sysinfo_electron')]: sysinfo['Electron'],
+                        [this.t('about.sysinfo_arch')]: sysinfo['OS Arch'],
+                        [this.t('about.sysinfo_platform')]: sysinfo['Platform']
+                    };
+                    
+                    ipcRenderer.on('settings-updated', () => this.loadTranslations());
+                },
+                async loadTranslations() {
+                    const { ipcRenderer } = require('electron');
+                    const settings = await ipcRenderer.invoke('get-settings');
+                    this.i18n = await ipcRenderer.invoke('get-translations', settings.language);
+                },
+                t(path) {
+                    const keys = path.split('.');
+                    let result = this.i18n;
+                    for (const key of keys) { result = result ? result[key] : null; }
+                    return result || path;
+                },
+                async exportKey() {
+                    const { ipcRenderer } = require('electron');
+                    this.loading = true;
+                    try {
+                        const res = await ipcRenderer.invoke('export-key');
+                        if (res.success) {
+                            this.msg = this.t('about.export_success');
+                            this.error = false;
+                        } else if (res.error) {
+                            this.msg = this.t('about.export_error') + res.error;
+                            this.error = true;
+                        }
+                    } catch(e) {
+                        this.msg = this.t('about.export_error') + e.message;
+                        this.error = true;
+                    }
+                    this.loading = false;
+                    setTimeout(() => this.msg = '', 4000);
+                },
+                async importKey() {
+                    const { ipcRenderer } = require('electron');
+                    this.loading = true;
+                    try {
+                        const res = await ipcRenderer.invoke('import-key');
+                        if (res.success) {
+                            this.msg = this.t('about.import_success');
+                            this.error = false;
+                        } else if (res.error) {
+                            this.msg = this.t('about.import_error') + res.error;
+                            this.error = true;
+                        }
+                    } catch(e) {
+                        this.msg = this.t('about.import_error') + e.message;
+                        this.error = true;
+                    }
+                    this.loading = false;
+                    setTimeout(() => this.msg = '', 4000);
+                }
+            }
+        }
+    </script>
+</body>
+</html>

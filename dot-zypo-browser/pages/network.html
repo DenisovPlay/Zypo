@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Zypo Network</title>
+    <link rel="stylesheet" href="zb://dist/tailwind.css">
+    <script defer src="zb://dist/alpine.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+        
+        body { 
+            background-color: #050505; 
+            color: #ffffff; 
+            font-family: 'Outfit', sans-serif; 
+            overflow-x: hidden;
+        }
+        [x-cloak] { display: none !important; }
+        
+        /* Smooth Scrollbar */
+        .custom-scroll::-webkit-scrollbar { width: 4px; }
+        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+        
+        /* Glassmorphism */
+        .glass {
+            background: rgba(20, 20, 20, 0.4);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .pulse-dot {
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+    </style>
+</head>
+<body class="selection:bg-blue-500/30">
+    <div x-data="networkApp()" x-init="init()" class="h-screen flex flex-col relative overflow-y-auto custom-scroll bg-[#050505] text-white" x-cloak>
+        
+        <!-- Background Glow -->
+        <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-blue-500/10 blur-[120px] rounded-full pointer-events-none z-0"></div>
+
+        <!-- Top Bar -->
+        <header class="flex justify-between items-center p-6 shrink-0 z-20">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-2xl glass flex items-center justify-center">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                </div>
+                <h1 class="text-xl font-semibold tracking-wide" x-text="t('browser.network_title') || 'Zypo Network'"></h1>
+            </div>
+            <div class="glass px-4 py-2 rounded-full flex items-center gap-2 max-w-xs">
+                <span class="text-xs text-zinc-500 font-medium" x-text="t('browser.network_node_label') + ': '"></span>
+                <span class="text-sm font-mono truncate" x-text="stats.peer_id || '...'"></span>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <div class="flex-1 pb-28 px-6 z-10 flex flex-col h-full max-w-4xl mx-auto w-full pt-8">
+            
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- Connection Status -->
+                <div class="glass rounded-[2.5rem] p-8 relative overflow-hidden group hover:bg-white/[0.02] transition-colors duration-300">
+                    <div class="absolute -right-12 -top-12 w-48 h-48 bg-blue-500/5 blur-3xl rounded-full group-hover:bg-blue-500/10 transition-all duration-500 pointer-events-none"></div>
+                    <div class="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-400 mb-6 border border-blue-500/20 shadow-inner">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    </div>
+                    <h2 class="text-zinc-500 text-xs font-semibold uppercase tracking-widest mb-2" x-text="t('browser.network_connected_peers')"></h2>
+                    <div class="flex items-baseline gap-2">
+                        <span class="text-5xl font-light tracking-tight" x-text="stats.peers !== undefined ? stats.peers : '--'"></span>
+                        <span class="text-zinc-400 font-medium text-sm" x-text="t('browser.network_nodes_count')"></span>
+                    </div>
+                </div>
+                
+                <!-- Economy Status -->
+                <div class="glass rounded-[2.5rem] p-8 relative overflow-hidden group hover:bg-white/[0.02] transition-colors duration-300">
+                    <div class="absolute -right-12 -top-12 w-48 h-48 bg-emerald-500/5 blur-3xl rounded-full group-hover:bg-emerald-500/10 transition-all duration-500 pointer-events-none"></div>
+                    <div class="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-400 mb-6 border border-emerald-500/20 shadow-inner">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    </div>
+                    <h2 class="text-zinc-500 text-xs font-semibold uppercase tracking-widest mb-2" x-text="t('browser.network_oracle_sync')"></h2>
+                    <div class="flex items-center gap-3 mt-4">
+                        <div class="w-3 h-3 rounded-full shrink-0" :class="stats.economy_status === 'synced' ? 'bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.5)]' : (stats.economy_status === 'syncing' ? 'bg-amber-500 animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.5)]' : 'bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]')"></div>
+                        <span class="text-xl font-medium tracking-wide capitalize truncate" x-text="t('browser.status_' + (stats.economy_status || 'offline'))"></span>
+                    </div>
+                </div>
+
+                <!-- Local RPC Port -->
+                <div class="glass rounded-[2.5rem] p-8 relative overflow-hidden group hover:bg-white/[0.02] transition-colors duration-300">
+                    <div class="absolute -right-12 -top-12 w-48 h-48 bg-purple-500/5 blur-3xl rounded-full group-hover:bg-purple-500/10 transition-all duration-500 pointer-events-none"></div>
+                    <div class="w-12 h-12 rounded-2xl bg-purple-500/10 flex items-center justify-center text-purple-400 mb-6 border border-purple-500/20 shadow-inner">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
+                    </div>
+                    <h2 class="text-zinc-500 text-xs font-semibold uppercase tracking-widest mb-2" x-text="t('browser.network_local_rpc')"></h2>
+                    <div class="flex items-baseline gap-3">
+                        <span class="text-4xl font-light font-mono" x-text="rpcPort || '--'"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Reconnect Card -->
+            <div class="glass rounded-[2.5rem] p-6 md:p-8 mt-8 flex flex-col md:flex-row items-center justify-between gap-6 overflow-hidden relative shrink-0">
+                <div class="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-transparent pointer-events-none"></div>
+                <div class="relative z-10 flex flex-col items-center md:items-start text-center md:text-left">
+                    <h2 class="text-xl font-medium mb-2 tracking-wide" x-text="t('browser.dht_connectivity')"></h2>
+                    <p class="text-zinc-400 text-sm max-w-lg" x-text="t('browser.dht_desc')"></p>
+                </div>
+                <button @click="reconnect()" :disabled="loading" class="relative z-10 w-full md:w-auto shrink-0 bg-white text-black font-semibold px-8 py-4 rounded-full hover:bg-zinc-200 active:scale-95 transition-all duration-300 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-3 shadow-[0_0_20px_rgba(255,255,255,0.1)]">
+                    <svg x-show="loading" class="animate-spin h-5 w-5 text-black" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    <svg x-show="!loading" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.92-10.44l5.08 5.08"/></svg>
+                    <span x-text="t('browser.reconnect_button')"></span>
+                </button>
+            </div>
+            
+        </div>
+    </div>
+
+    <script src="zb://js/sdk.js"></script>
+    <script>
+        function networkApp() {
+            return {
+                stats: {},
+                loading: false,
+                rpcPort: 0,
+                initialized: false,
+                i18n: {},
+
+                async init() {
+                    try {
+                        if (Zypo._initialized) {
+                            await this.onSdkReady();
+                        } else {
+                            window.addEventListener('zypo-sdk-ready', () => this.onSdkReady());
+                            await Zypo.init();
+                        }
+                        setInterval(() => this.fetchStats(), 2000);
+                        this.initialized = true;
+                    } catch (e) {
+                        console.error('Failed to initialize network page:', e);
+                    }
+                },
+
+                async onSdkReady() {
+                    this.i18n = Zypo.getTranslations();
+                    this.rpcPort = await Zypo.getRpcPort();
+                    await this.fetchStats();
+                },
+
+                t(key) {
+                    const parts = key.split('.');
+                    let obj = this.i18n;
+                    for (const p of parts) {
+                        if (!obj) return key;
+                        obj = obj[p];
+                    }
+                    return obj || key;
+                },
+
+                async fetchStats() {
+                    const data = await Zypo.getStatus();
+                    if (data) {
+                        const prevStatus = this.stats.economy_status;
+                        this.stats = data;
+                        if (data.economy_status === 'offline' && prevStatus === 'synced') {
+                            window.Zypo.daemonFetch('/rpc/network/reconnect', { method: 'POST' });
+                            this.stats.economy_status = 'syncing';
+                        }
+                        this.rpcPort = await Zypo.getRpcPort(); 
+                    }
+                },
+
+                async reconnect() {
+                    this.loading = true;
+                    try {
+                        await Zypo.daemonFetch('/rpc/network/reconnect', { method: 'POST' });
+                        setTimeout(() => this.fetchStats(), 1000);
+                    } catch(e) {}
+                    setTimeout(() => { this.loading = false }, 1000);
+                }
+            }
+        }
+    </script>
+</body>
+</html>

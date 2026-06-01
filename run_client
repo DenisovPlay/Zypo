@@ -1,0 +1,20 @@
+#!/bin/bash
+# run_client - Start the Zypo Client Node
+
+# Kill child processes on exit
+trap "kill 0" EXIT
+
+echo "Starting Client Node daemon (auto-restarting on .go/.html changes)..."
+
+# Check if nodemon is installed
+if ! command -v nodemon &> /dev/null; then
+    echo "Warning: nodemon not found. Installing globally via npm..."
+    npm install -g nodemon
+fi
+
+echo "Cleaning up old processes on ports 8902, 8903..."
+lsof -ti:8902,8903 | xargs kill -9 2>/dev/null
+sleep 1
+
+cd dot-zypo-client && nodemon --watch . --watch ../dot-zypo-common --ignore data/ --ignore zypo_sites/ --ext go,html,css,json --exec "go run main.go"
+
