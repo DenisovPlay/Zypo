@@ -88,13 +88,23 @@ func (n *ZypoNode) RegisterDomainDHT(record *ZypoRecord) error {
 			return
 		}
 
-		ctx, cancel := context.WithTimeout(n.ctx, 30*time.Second)
-		defer cancel()
-		if err := n.DHT.PutValue(ctx, key, val); err != nil {
-			log.Printf("[DNS] Background DHT publication failed for %s: %v", record.Domain, err)
-		} else {
-			log.Printf("[DNS] Successfully published %s to DHT in background", record.Domain)
+		// Повторяем попытки публикации, так как при старте таблица маршрутизации может быть пуста
+		maxRetries := 15
+		for i := 0; i < maxRetries; i++ {
+			ctx, cancel := context.WithTimeout(n.ctx, 30*time.Second)
+			err := n.DHT.PutValue(ctx, key, val)
+			cancel()
+			
+			if err == nil {
+				log.Printf("[DNS] Successfully published %s to DHT in background", record.Domain)
+				return
+			}
+			
+			log.Printf("[DNS] Background DHT publication failed for %s (attempt %d/%d): %v", record.Domain, i+1, maxRetries, err)
+			time.Sleep(2 * time.Second)
 		}
+		
+		log.Printf("[DNS] FATAL: Could not publish %s to DHT after %d attempts", record.Domain, maxRetries)
 	}()
 	
 	return nil
