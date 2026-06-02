@@ -122,8 +122,8 @@ func (n *ZypoNode) handleZypoStream(s network.Stream) {
 		txData, _ := io.ReadAll(bodyReader)
 		var tx Transaction
 		if err := json.Unmarshal(txData, &tx); err == nil {
-			isNew := !n.EconomyManager.HasSeenTransaction(&tx)
-			if err := n.EconomyManager.ProcessTransaction(&tx); err == nil {
+			isNew, err := n.EconomyManager.ProcessTransaction(&tx)
+			if err == nil {
 				header = ZypoHeader{Status: 200}
 				if isNew {
 					go n.EconomyManager.BroadcastTransaction(&tx)

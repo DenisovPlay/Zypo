@@ -242,9 +242,9 @@ func (em *EconomyManager) verifyTx(tx *Transaction) error {
 	return nil
 }
 
-func (em *EconomyManager) ProcessTransaction(tx *Transaction) error {
+func (em *EconomyManager) ProcessTransaction(tx *Transaction) (bool, error) {
 	if err := em.verifyTx(tx); err != nil {
-		return err
+		return false, err
 	}
 
 	em.mu.Lock()
@@ -275,12 +275,13 @@ func (em *EconomyManager) ProcessTransaction(tx *Transaction) error {
 
 	creditLimit := fromAcc.Rating * 2.0 // Credit line based on decentralized reputation
 	if fromAcc.Balance+creditLimit < tx.Amount && !isOracle {
-		return fmt.Errorf("insufficient funds and exhausted decentralized credit limit")
+		return false, fmt.Errorf("insufficient funds and exhausted decentralized credit limit")
 	}
 
 	// Replay protection O(1)
-	if fromAcc.SeenTxs[tx.ID] {
-		return fmt.Errorf("tx already processed")
+	if fromAcc.SeenTxs[tx.ID] || toAcc.SeenTxs[tx.ID] {
+		// Already processed
+		return false, nil
 	}
 
 	fromAcc.Balance -= tx.Amount
@@ -319,7 +320,7 @@ func (em *EconomyManager) ProcessTransaction(tx *Transaction) error {
 
 	em.saveLocked()
 	log.Printf("💰 Economy: Processed TX %s (%s -> %s: %d ZPCN)", tx.ID, tx.From[:8], tx.To[:8], tx.Amount)
-	return nil
+	return true, nil
 }
 
 func (em *EconomyManager) CreateAndSendTransaction(to string, amount float64, comment string) (*Transaction, error) {
@@ -350,7 +351,7 @@ func (em *EconomyManager) CreateAndSendTransaction(to string, amount float64, co
 		Signature: sig,
 	}
 
-	if err := em.ProcessTransaction(tx); err != nil {
+	if _, err := em.ProcessTransaction(tx); err != nil {
 		return nil, err
 	}
 
@@ -484,6 +485,9 @@ func (em *EconomyManager) BroadcastTransaction(tx *Transaction) {
 			s.Write(append(reqBytes, '\n'))
 			s.Write(append(txBytes, '\n'))
 			s.CloseWrite()
+
+			// Discard the response to allow graceful TCP/QUIC stream termination
+			io.Copy(io.Discard, s)
 			s.Close()
 		}(p)
 	}
