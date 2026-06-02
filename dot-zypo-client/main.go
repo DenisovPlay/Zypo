@@ -6,17 +6,23 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
-	"github.com/dot-zypo/daemon/common/hosting"
 	client "github.com/dot-zypo/daemon/client/pkg/client"
+	"github.com/dot-zypo/daemon/common/hosting"
 	"github.com/dot-zypo/daemon/common/node"
 	"github.com/multiformats/go-multiaddr"
 )
 
 func main() {
+	// Initialize Enterprise Structured Logging
+	slogger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(slogger)
+	
 	fmt.Fprintln(os.Stdout, "ZYPO_DAEMON_BOOTING")
 
 	configPath := flag.String("config", "zypo_config.json", "Path to config file")
@@ -44,8 +50,13 @@ func main() {
 		cfg.ListenPort = 0 // random
 	}
 
-	// Start RPC server IMMEDIATELLY with nil node
-	go client.StartClientRPC(*rpcPort, cfg.RpcToken)
+	// Prepare node pointer
+	var globalNode *node.ZypoNode
+
+	// Start RPC server IMMEDIATELLY with dynamic port and getter
+	go client.StartClientRPC(*rpcPort, cfg.RpcToken, cfg.DataDir, func() *node.ZypoNode {
+		return globalNode
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -57,7 +68,7 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Fprintf(os.Stdout, "NODE_PEER_ID %s\n", nReady.Host.ID().String())
-	client.SetRPCNode(nReady) // Update the global for RPC handlers
+	globalNode = nReady // Update the pointer for RPC handlers
 	defer nReady.Close()
 
 	// Plug in hosting logic (for local site previews or future usage)
@@ -104,9 +115,11 @@ func main() {
 	}
 
 	// TUN requires root privileges on most systems
-	tunName := "zypo-tun0"
-	if os.Getenv("OS") == "darwin" || true { // macOS preference
+	tunName := "zypo_tun"
+	if runtime.GOOS == "darwin" {
 		tunName = "utun10"
+	} else if runtime.GOOS == "linux" {
+		tunName = "tun0"
 	}
 	tm, err := client.StartTUN(tunName, vpn, excludedIPs)
 	if err != nil {

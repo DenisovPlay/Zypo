@@ -99,6 +99,8 @@ require (
 	github.com/quic-go/webtransport-go v0.10.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/tetratelabs/wazero v1.12.0 // indirect
+	github.com/vishvananda/netlink v1.3.1 // indirect
+	github.com/vishvananda/netns v0.0.5 // indirect
 	github.com/whyrusleeping/go-keyspace v0.0.0-20160322163242-5b898ac5add1 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect

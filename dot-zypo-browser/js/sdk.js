@@ -3,11 +3,13 @@
 
 (function() {
     let _ipc = null;
-    try {
-        _ipc = require('electron').ipcRenderer;
-    } catch(e) {
-        // Fallback for when nodeIntegration might be tricky
-        console.warn('[ZypoSDK] Electron not found via require, check nodeIntegration');
+    
+    if (window.electron && window.electron.ipcRenderer) {
+        _ipc = window.electron.ipcRenderer;
+    } else {
+        try {
+            _ipc = require('electron').ipcRenderer;
+        } catch(e) {}
     }
 
     const ZypoSDK = {
@@ -16,55 +18,57 @@
         _translations: {},
         _lang: 'en',
         _initialized: false,
+        _initPromise: null,
         _ipc: _ipc,
 
-        /**
-         * Initialize the SDK, load settings and translations
-         */
         async init() {
             if (this._initialized) return;
-            try {
-                if (!this._ipc) {
-                    try {
-                        const electron = require('electron');
-                        this._ipc = electron.ipcRenderer;
-                    } catch(e) {
-                        console.error('[ZypoSDK] IPC not available');
-                        return;
+            if (this._initPromise) return this._initPromise;
+
+            this._initPromise = (async () => {
+                try {
+                    if (!this._ipc) {
+                        const electron = window.electron;
+                        if (electron) this._ipc = electron.ipcRenderer;
                     }
+
+                    if (!this._ipc) throw new Error('IPC not available');
+
+                    const settings = await this._ipc.invoke('get-settings');
+                    this._lang = settings.language || 'en';
+                    this._translations = await this._ipc.invoke('get-translations', this._lang);
+                    
+                    this._rpcPort = await this._ipc.invoke('get-rpc-port');
+                    this._rpcToken = await this._ipc.invoke('get-rpc-token');
+
+                    this._initialized = true;
+                    console.log('[ZypoSDK] Initialized for:', this._lang);
+                    window.dispatchEvent(new CustomEvent('zypo-sdk-ready'));
+                } catch (e) {
+                    console.error('[ZypoSDK] Initialization failed:', e);
                 }
+            })();
 
-                const settings = await this._ipc.invoke('get-settings');
-                this._lang = settings.language || 'en';
-                this._translations = await this._ipc.invoke('get-translations', this._lang);
-                
-                // Fetch initial RPC details
-                this._rpcPort = await this._ipc.invoke('get-rpc-port');
-                this._rpcToken = await this._ipc.invoke('get-rpc-token');
-
-                this._initialized = true;
-                console.log('[ZypoSDK] Initialized (IPC Mode) for:', this._lang);
-                
-                window.dispatchEvent(new CustomEvent('zypo-sdk-ready'));
-            } catch (e) {
-                console.error('[ZypoSDK] Initialization failed:', e);
-            }
+            return this._initPromise;
         },
 
-        /**
-         * Get current Peer ID
-         */
         async getPeerId() {
             if (!this._ipc) return 'unknown';
             return await this._ipc.invoke('get-last-peer-id');
         },
 
-        /**
-         * Get current RPC port
-         */
         async getRpcPort() {
+            if (this._rpcPort) return this._rpcPort;
             if (!this._ipc) return 0;
-            return await this._ipc.invoke('get-rpc-port');
+            this._rpcPort = await this._ipc.invoke('get-rpc-port');
+            return this._rpcPort;
+        },
+
+        async getRpcToken() {
+            if (this._rpcToken) return this._rpcToken;
+            if (!this._ipc) return '';
+            this._rpcToken = await this._ipc.invoke('get-rpc-token');
+            return this._rpcToken;
         },
 
         async daemonFetch(path, options = {}) {
@@ -77,7 +81,6 @@
             });
 
             if (!result.success) {
-                // Return a real Response object with JSON body even for errors
                 return new Response(JSON.stringify({ success: false, error: result.error || 'RPC call failed' }), {
                     status: result.status || 500,
                     statusText: 'Error',
@@ -85,7 +88,6 @@
                 });
             }
 
-            // Return a real standards-compliant Response object
             return new Response(JSON.stringify(result.data), {
                 status: 200,
                 statusText: 'OK',
@@ -93,9 +95,6 @@
             });
         },
 
-        /**
-         * Get daemon status with normalized fields
-         */
         async getStatus() {
             try {
                 const res = await this.daemonFetch('/rpc/status');
@@ -111,14 +110,21 @@
         /**
          * Translate a key using loaded locale
          */
-        t(key) {
+        t(key, translations) {
+            if (!key) return '';
             const parts = key.split('.');
-            let obj = this._translations;
+            let obj = translations || this._translations;
+            
+            if (!obj || Object.keys(obj).length === 0) return key;
+
             for (const p of parts) {
-                if (!obj) return key;
-                obj = obj[p];
+                if (obj && typeof obj === 'object' && p in obj) {
+                    obj = obj[p];
+                } else {
+                    return key;
+                }
             }
-            return obj || key;
+            return typeof obj === 'string' ? obj : key;
         },
 
         getTranslations() {

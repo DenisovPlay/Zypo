@@ -139,6 +139,7 @@
         </div>
     </div>
 
+    <script src="zb://js/sdk.js"></script>
     <script>
         /*INJECT_BOOKMARKS*/
         window.BOOKMARKS = window.BOOKMARKS || [];
@@ -178,9 +179,16 @@
                 },
 
                 async init() {
-                    const { ipcRenderer } = require('electron');
-                    await this.loadTranslations();
-                    ipcRenderer.on('settings-updated', () => this.loadTranslations());
+                    const { ipcRenderer } = window.electron;
+                    if (window.Zypo && !Zypo._initialized) {
+                        await Zypo.init();
+                    }
+                    this.i18n = Zypo.getTranslations();
+                    
+                    ipcRenderer.on('settings-updated', async () => {
+                        await Zypo.init();
+                        this.i18n = Zypo.getTranslations();
+                    });
 
                     this.updateClock();
                     setInterval(() => this.updateClock(), 1000);
@@ -192,7 +200,8 @@
                     this.time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
                     
                     const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-                    const lang = (this.i18n.browser && this.i18n.browser.loading === 'Загрузка...') ? 'ru-RU' : 'en-US';
+                    // Robust language detection for date
+                    const lang = (Zypo._lang === 'ru') ? 'ru-RU' : 'en-US';
                     this.date = now.toLocaleDateString(lang, options);
 
                     if (hours >= 5 && hours < 12) this.greeting = this.t('newtab.greet_morning');
@@ -200,18 +209,9 @@
                     else if (hours >= 18 && hours < 23) this.greeting = this.t('newtab.greet_evening');
                     else this.greeting = this.t('newtab.greet_night');
                 },
-                
-                async loadTranslations() {
-                    const { ipcRenderer } = require('electron');
-                    const settings = await ipcRenderer.invoke('get-settings');
-                    this.i18n = await ipcRenderer.invoke('get-translations', settings.language);
-                },
 
                 t(path) {
-                    const keys = path.split('.');
-                    let result = this.i18n;
-                    for (const key of keys) { result = result ? result[key] : null; }
-                    return result || path;
+                    return Zypo.t(path, this.i18n);
                 },
                 
                 openContext(e, b) {

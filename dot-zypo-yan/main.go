@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/url"
 	"os"
 	"os/signal"
@@ -52,6 +53,10 @@ func switchLayout(s string) string {
 }
 
 func main() {
+	// Initialize Enterprise Structured Logging
+	slogger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(slogger)
+
 	configPath := flag.String("config", "zypo_config.json", "Path to config file")
 	listenPort := flag.Int("port", 9000, "P2P listen port")
 	enableMdns := flag.Bool("mdns", false, "Enable mDNS discovery")

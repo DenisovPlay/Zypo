@@ -11,40 +11,48 @@ btnForward.addEventListener('click', () => {
   if (view && view.canGoForward()) view.goForward();
 });
 
-btnRefresh.addEventListener('click', () => {
+btnReload.addEventListener('click', () => {
   const view = getActiveView();
   if (view) view.reload();
 });
 
-// New Tab Button
-btnNewTab.addEventListener('click', () => {
-  createTab('newtab');
+btnHome.addEventListener('click', () => {
+  navigate(getSettings().homePage || 'zb://newtab');
 });
 
-// Bookmarks Button
-const btnBookmark = document.getElementById('btn-bookmark');
-btnBookmark.addEventListener('click', async () => {
+// Bookmark Toggle
+btnBookmark.addEventListener('click', () => {
   const view = getActiveView();
-  if (view) {
-    let url = view.getURL();
-    let title = view.getTitle() || url;
-    if (url && !url.includes('newtab') && !url.includes('bookmarks')) {
-      const isBookmarked = await ipcRenderer.invoke('toggle-bookmark', { title, url });
-      setBookmarkIconState(isBookmarked);
-    }
+  if (!view) return;
+  const url = view.getURL();
+  const title = view.getTitle();
+  
+  const bookmarks = getBookmarks();
+  const index = bookmarks.findIndex(b => b.url === url);
+  
+  if (index >= 0) {
+    bookmarks.splice(index, 1);
+  } else {
+    bookmarks.push({ url, title });
   }
+  
+  saveBookmarks(bookmarks);
+  updateBookmarkUI();
+  
+  // Refresh New Tab pages if open
+  const tabs = document.querySelectorAll('webview');
+  tabs.forEach(wv => {
+      if(wv.getURL().includes('newtab.html')) wv.reload();
+  });
 });
 
-async function updateBookmarkIconForUrl(url) {
-  if (url && !url.includes('newtab') && !url.includes('bookmarks')) {
-    const isBookmarked = await ipcRenderer.invoke('is-bookmarked', url);
-    setBookmarkIconState(isBookmarked);
-  } else {
-    setBookmarkIconState(false);
-  }
-}
-
-function setBookmarkIconState(isBookmarked) {
+function updateBookmarkUI() {
+  const view = getActiveView();
+  if (!view) return;
+  const url = view.getURL();
+  const bookmarks = getBookmarks();
+  const isBookmarked = bookmarks.some(b => b.url === url);
+  
   if (isBookmarked) {
     btnBookmark.classList.replace('text-zinc-400', 'text-yellow-400');
     // SVG switch to filled star
@@ -56,30 +64,31 @@ function setBookmarkIconState(isBookmarked) {
   }
 }
 
-// Dropdowns are now managed by Alpine.js in index.html
-
-// Menu Dropdown Clicks
-document.getElementById('menu-about').addEventListener('click', () => {
-  createTab('about');
-});
-document.getElementById('menu-wallet').addEventListener('click', () => {
-  createTab('wallet');
-});
-document.getElementById('menu-bookmarks').addEventListener('click', () => {
-  createTab('bookmarks');
-});
-document.getElementById('menu-history').addEventListener('click', () => {
-  createTab('history');
-});
-document.getElementById('menu-settings').addEventListener('click', () => {
-  createTab('settings');
-});
-document.getElementById('menu-request-domain').addEventListener('click', () => {
-  createTab('zypo://domains.zypo');
-});
+// Menu Item Clicks
 document.getElementById('menu-wallet')?.addEventListener('click', () => {
   createTab('wallet');
 });
+
 document.getElementById('menu-network')?.addEventListener('click', () => {
   createTab('network');
+});
+
+document.getElementById('menu-bookmarks')?.addEventListener('click', () => {
+  createTab('bookmarks');
+});
+
+document.getElementById('menu-history')?.addEventListener('click', () => {
+  createTab('history');
+});
+
+document.getElementById('menu-downloads')?.addEventListener('click', () => {
+  createTab('downloads');
+});
+
+document.getElementById('menu-settings')?.addEventListener('click', () => {
+  createTab('settings');
+});
+
+document.getElementById('menu-about')?.addEventListener('click', () => {
+  createTab('about');
 });

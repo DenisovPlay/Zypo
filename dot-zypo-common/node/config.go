@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -58,6 +59,18 @@ func LoadConfig(path string) (Config, error) {
 	}
 	if envBoot := os.Getenv("ZYPO_BOOTSTRAP_NODES"); envBoot != "" {
 		cfg.BootstrapNodes = strings.Split(envBoot, ",")
+	}
+
+	// Enforce absolute paths for Docker stability if not absolute
+	if !filepath.IsAbs(cfg.DataDir) && cfg.DataDir != "" {
+		if pwd, err := os.Getwd(); err == nil {
+			cfg.DataDir = filepath.Join(pwd, cfg.DataDir)
+		}
+	}
+	if !filepath.IsAbs(cfg.SitesDir) && cfg.SitesDir != "" {
+		if pwd, err := os.Getwd(); err == nil {
+			cfg.SitesDir = filepath.Join(pwd, cfg.SitesDir)
+		}
 	}
 
 	return cfg, nil

@@ -6,59 +6,144 @@
     <link rel="stylesheet" href="zb://dist/tailwind.css">
     <script defer src="zb://dist/alpine.min.js"></script>
     <style>
-        body { background: #000; color: #fff; font-family: sans-serif; }
-        .sidebar-item.active { background: #27272a; color: #fff; }
-        .sidebar-item { color: #a1a1aa; transition: all 0.2s; cursor: pointer; }
-        .sidebar-item:hover:not(.active) { background: #18181b; color: #d4d4d8; }
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+        
+        body { 
+            background-color: #050505; 
+            color: #ffffff; 
+            font-family: 'Outfit', sans-serif; 
+            overflow: hidden;
+        }
         [x-cloak] { display: none !important; }
+        
+        /* Smooth Scrollbar */
+        .custom-scroll::-webkit-scrollbar { width: 4px; }
+        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #222; border-radius: 4px; }
+        
+        /* Glassmorphism */
+        .glass {
+            background: rgba(20, 20, 20, 0.4);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .sidebar-item {
+            color: #71717a;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            position: relative;
+        }
+
+        .sidebar-item:hover:not(.active) {
+            color: #d4d4d8;
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .sidebar-item.active {
+            color: #ffffff;
+            background: rgba(255, 255, 255, 0.05);
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+        }
+
+        .sidebar-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 20%;
+            bottom: 20%;
+            width: 3px;
+            background: #3b82f6;
+            border-radius: 0 4px 4px 0;
+            box-shadow: 0 0 10px #3b82f6;
+        }
+
+        input[type="text"], input[type="number"], select {
+            background: rgba(0, 0, 0, 0.4) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            transition: all 0.3s ease;
+        }
+
+        input:focus, select:focus {
+            border-color: rgba(59, 130, 246, 0.5) !important;
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1) !important;
+            outline: none;
+        }
+
+        .bg-glow {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.08) 0%, rgba(59, 130, 246, 0) 70%);
+            filter: blur(80px);
+            z-index: -1;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body 
     x-data="settingsData()"
+    x-init="init()"
     x-effect="document.title = t('settings.title')"
-    class="h-screen flex flex-col overflow-hidden"
+    class="h-screen flex flex-col selection:bg-blue-500/30"
 >
+    <div class="bg-glow"></div>
+    
     <div class="flex flex-1 overflow-hidden">
         <!-- Sidebar -->
-        <div class="w-64 bg-zinc-900/50 border-r border-zinc-800 p-4 space-y-2">
-            <h1 class="text-xl font-bold px-4 mb-6" x-text="t('settings.title')"></h1>
-            <div @click="page = 'general'" :class="page === 'general' ? 'active' : ''" class="sidebar-item px-4 py-2 rounded-xl flex items-center space-x-3">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
-                <span class="font-medium" x-text="t('settings.general')"></span>
+        <div class="w-72 glass border-r-0 m-4 rounded-[2.5rem] p-6 flex flex-col gap-2 shrink-0">
+            <div class="flex items-center gap-3 px-4 mb-8">
+                <div class="w-10 h-10 rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-400 border border-blue-500/20">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.1a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                </div>
+                <h1 class="text-xl font-bold tracking-tight" x-text="t('settings.title')"></h1>
             </div>
-            <div @click="page = 'search'" :class="page === 'search' ? 'active' : ''" class="sidebar-item px-4 py-2 rounded-xl flex items-center space-x-3">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                <span class="font-medium" x-text="t('settings.search')"></span>
+
+            <div @click="page = 'general'" :class="page === 'general' ? 'active' : ''" class="sidebar-item px-5 py-3.5 rounded-2xl flex items-center space-x-4">
+                <svg class="w-5 h-5 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+                <span class="font-semibold text-sm" x-text="t('settings.general')"></span>
             </div>
-            <div @click="page = 'network'" :class="page === 'network' ? 'active' : ''" class="sidebar-item px-4 py-2 rounded-xl flex items-center space-x-3">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
-                <span class="font-medium" x-text="t('settings.network')"></span>
+            
+            <div @click="page = 'search'" :class="page === 'search' ? 'active' : ''" class="sidebar-item px-5 py-3.5 rounded-2xl flex items-center space-x-4">
+                <svg class="w-5 h-5 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                <span class="font-semibold text-sm" x-text="t('settings.search')"></span>
             </div>
-            <div @click="page = 'privacy'" :class="page === 'privacy' ? 'active' : ''" class="sidebar-item px-4 py-2 rounded-xl flex items-center space-x-3">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
-                <span class="font-medium" x-text="t('settings.privacy')"></span>
+
+            <div @click="page = 'network'" :class="page === 'network' ? 'active' : ''" class="sidebar-item px-5 py-3.5 rounded-2xl flex items-center space-x-4">
+                <svg class="w-5 h-5 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
+                <span class="font-semibold text-sm" x-text="t('settings.network')"></span>
+            </div>
+
+            <div @click="page = 'privacy'" :class="page === 'privacy' ? 'active' : ''" class="sidebar-item px-5 py-3.5 rounded-2xl flex items-center space-x-4">
+                <svg class="w-5 h-5 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                <span class="font-semibold text-sm" x-text="t('settings.privacy')"></span>
             </div>
         </div>
 
         <!-- Content -->
-        <div class="flex-1 p-12 overflow-y-auto bg-black">
+        <div class="flex-1 overflow-y-auto custom-scroll p-12 pr-16">
             <!-- General -->
-            <div x-show="page === 'general'" class="space-y-8 max-w-2xl">
+            <div x-show="page === 'general'" class="space-y-12 max-w-3xl animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div>
-                    <h2 class="text-3xl font-black mb-2" x-text="t('settings.general')"></h2>
+                    <h2 class="text-4xl font-black mb-2 tracking-tight" x-text="t('settings.general')"></h2>
+                    <p class="text-zinc-500 text-sm" x-text="t('settings.general_desc')"></p>
                 </div>
                 
                 <div class="space-y-4">
                     <!-- Language -->
-                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                    <div class="flex items-center justify-between p-8 glass rounded-[2.5rem] group hover:bg-white/[0.02] transition-colors">
                         <div>
-                            <div class="font-bold text-lg" x-text="t('settings.language')"></div>
-                            <div class="text-sm text-zinc-500" x-text="t('settings.language_desc')"></div>
+                            <div class="font-bold text-lg mb-1" x-text="t('settings.language')"></div>
+                            <div class="text-sm text-zinc-500 max-w-md" x-text="t('settings.language_desc')"></div>
                         </div>
                         <select 
                             x-model="settings.language" 
                             @change="updateSetting('language', $event.target.value)"
-                            class="bg-black border border-zinc-700 rounded-xl px-4 py-2 text-sm outline-none focus:border-blue-500 transition-colors"
+                            class="rounded-2xl px-6 py-3 text-sm font-semibold cursor-pointer min-w-[140px]"
                         >
                             <option value="en">English</option>
                             <option value="ru">Русский</option>
@@ -66,31 +151,30 @@
                     </div>
 
                     <!-- Home Page -->
-                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                    <div class="flex items-center justify-between p-8 glass rounded-[2.5rem] group hover:bg-white/[0.02] transition-colors">
                         <div>
-                            <div class="font-bold text-lg" x-text="t('settings.home_page')"></div>
-                            <div class="text-sm text-zinc-500" x-text="t('settings.home_page_desc')"></div>
+                            <div class="font-bold text-lg mb-1" x-text="t('settings.home_page')"></div>
+                            <div class="text-sm text-zinc-500 max-w-md" x-text="t('settings.home_page_desc')"></div>
                         </div>
                         <input 
                             type="text" 
                             x-model="settings.homePage"
                             @change="updateSetting('homePage', $event.target.value)"
                             placeholder="zypo://gov.zypo" 
-                            class="bg-black border border-zinc-700 rounded-xl px-4 py-2 text-sm outline-none focus:border-blue-500 transition-colors min-w-[200px]"
+                            class="rounded-2xl px-6 py-3 text-sm font-mono min-w-[280px] text-right"
                         >
                     </div>
 
-
                     <!-- Startup Action -->
-                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                    <div class="flex items-center justify-between p-8 glass rounded-[2.5rem] group hover:bg-white/[0.02] transition-colors">
                         <div>
-                            <div class="font-bold text-lg" x-text="t('settings.startup_action')"></div>
-                            <div class="text-sm text-zinc-500" x-text="t('settings.startup_action_desc')"></div>
+                            <div class="font-bold text-lg mb-1" x-text="t('settings.startup_action')"></div>
+                            <div class="text-sm text-zinc-500 max-w-md" x-text="t('settings.startup_action_desc')"></div>
                         </div>
                         <select 
                             x-model="settings.startupAction"
                             @change="updateSetting('startupAction', $event.target.value)"
-                            class="bg-black border border-zinc-700 rounded-xl px-4 py-2 text-sm outline-none focus:border-blue-500 transition-colors"
+                            class="rounded-2xl px-6 py-3 text-sm font-semibold cursor-pointer min-w-[200px]"
                         >
                             <option value="newtab" x-text="t('settings.startup_newtab')"></option>
                             <option value="continue" x-text="t('settings.startup_continue')"></option>
@@ -101,171 +185,157 @@
             </div>
 
             <!-- Search -->
-            <div x-show="page === 'search'" x-cloak class="space-y-8 max-w-2xl">
+            <div x-show="page === 'search'" x-cloak class="space-y-12 max-w-3xl animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div>
-                    <h2 class="text-3xl font-black mb-2" x-text="t('settings.search')"></h2>
+                    <h2 class="text-4xl font-black mb-2 tracking-tight" x-text="t('settings.search')"></h2>
+                    <p class="text-zinc-500 text-sm" x-text="t('settings.search_desc')"></p>
                 </div>
                 
                 <div class="space-y-4">
                     <!-- Enable Search -->
-                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                    <div class="flex items-center justify-between p-8 glass rounded-[2.5rem] group hover:bg-white/[0.02] transition-colors">
                         <div>
-                            <div class="font-bold text-lg" x-text="t('settings.enable_search')"></div>
-                            <div class="text-sm text-zinc-500" x-text="t('settings.enable_search_desc')"></div>
+                            <div class="font-bold text-lg mb-1" x-text="t('settings.enable_search')"></div>
+                            <div class="text-sm text-zinc-500 max-w-md" x-text="t('settings.enable_search_desc')"></div>
                         </div>
                         <label class="relative inline-flex items-center cursor-pointer">
                             <input type="checkbox" x-model="settings.enableSearch" @change="updateSetting('enableSearch', settings.enableSearch)" class="sr-only peer">
-                            <div class="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                            <div class="w-14 h-7 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 shadow-inner"></div>
                         </label>
                     </div>
 
                     <!-- Search Engine -->
-                    <div x-show="settings.enableSearch !== false" class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                    <div x-show="settings.enableSearch !== false" class="flex items-center justify-between p-8 glass rounded-[2.5rem] group hover:bg-white/[0.02] transition-colors animate-in zoom-in-95 duration-300">
                         <div>
-                            <div class="font-bold text-lg" x-text="t('settings.search_engine')"></div>
-                            <div class="text-sm text-zinc-500" x-text="t('settings.search_engine_desc')"></div>
+                            <div class="font-bold text-lg mb-1" x-text="t('settings.search_engine')"></div>
+                            <div class="text-sm text-zinc-500 max-w-md" x-text="t('settings.search_engine_desc')"></div>
                         </div>
                         <input 
                             type="text" 
                             x-model="settings.searchEngine"
                             @change="updateSetting('searchEngine', $event.target.value)"
                             placeholder="ya.rus" 
-                            class="bg-black border border-zinc-700 rounded-xl px-4 py-2 text-sm outline-none focus:border-blue-500 transition-colors min-w-[200px]"
+                            class="rounded-2xl px-6 py-3 text-sm font-mono min-w-[200px] text-right"
                         >
                     </div>
                 </div>
             </div>
 
             <!-- Network -->
-            <div x-show="page === 'network'" x-cloak class="space-y-8 max-w-2xl">
+            <div x-show="page === 'network'" x-cloak class="space-y-12 max-w-3xl animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div>
-                    <h2 class="text-3xl font-black mb-2" x-text="t('settings.network')"></h2>
+                    <h2 class="text-4xl font-black mb-2 tracking-tight" x-text="t('settings.network')"></h2>
+                    <p class="text-zinc-500 text-sm" x-text="t('settings.network_desc')"></p>
                 </div>
 
                 <div class="space-y-4">
                     <!-- Enable Mesh -->
-                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                    <div class="flex items-center justify-between p-8 glass rounded-[2.5rem] group hover:bg-white/[0.02] transition-colors">
                         <div>
-                            <div class="font-bold text-lg" x-text="t('settings.enable_mesh')"></div>
-                            <div class="text-sm text-zinc-500" x-text="t('settings.enable_mesh_desc')"></div>
+                            <div class="font-bold text-lg mb-1" x-text="t('settings.enable_mesh')"></div>
+                            <div class="text-sm text-zinc-500 max-w-md" x-text="t('settings.enable_mesh_desc')"></div>
                         </div>
                         <label class="relative inline-flex items-center cursor-pointer">
                             <input type="checkbox" checked class="sr-only peer">
-                            <div class="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                            <div class="w-14 h-7 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600 shadow-inner"></div>
                         </label>
                     </div>
 
-                    <!-- Bootstrap Nodes -->
-                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
-                        <div>
-                            <div class="font-bold text-lg" x-text="t('settings.bootstrap_nodes')"></div>
-                            <div class="text-sm text-zinc-500" x-text="t('settings.bootstrap_nodes_desc')"></div>
-                        </div>
-                        <button class="bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl px-4 py-2 text-sm font-medium transition-colors" x-text="t('settings.edit_list')">
-                        </button>
-                    </div>
-
                     <!-- Command Center Address -->
-                    <div class="p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem] space-y-3">
+                    <div class="p-10 glass rounded-[3rem] space-y-6 relative overflow-hidden group">
+                        <div class="absolute -right-16 -top-16 w-64 h-64 bg-blue-500/5 blur-3xl rounded-full group-hover:bg-blue-500/10 transition-all duration-700"></div>
+                        
                         <div>
-                            <div class="font-bold text-lg" x-text="t('settings.command_center_addr')"></div>
-                            <div class="text-sm text-zinc-500" x-text="t('settings.command_center_addr_desc')"></div>
+                            <div class="font-bold text-xl mb-1" x-text="t('settings.command_center_addr')"></div>
+                            <div class="text-sm text-zinc-500 max-w-xl" x-text="t('settings.command_center_addr_desc')"></div>
                         </div>
-                        <input
-                            type="text"
-                            x-model="commandCenterAddr"
-                            placeholder="/ip4/.../tcp/8900/p2p/12D3Koo..."
-                            class="w-full bg-black border border-zinc-700 rounded-xl px-4 py-3 text-sm text-zinc-200 font-mono outline-none focus:border-blue-500 transition-all"
-                        >
-                        <button
-                            @click="saveCommandCenter()"
-                            class="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold rounded-xl transition-colors"
-                            :class="commandCenterSaved ? 'bg-green-600' : ''"
-                            x-text="commandCenterSaved ? t('settings.saved_restarting') : t('settings.save_apply')"
-                        ></button>
+                        
+                        <div class="space-y-4">
+                            <input
+                                type="text"
+                                x-model="commandCenterAddr"
+                                placeholder="/ip4/.../tcp/8900/p2p/12D3Koo..."
+                                class="w-full rounded-2xl px-6 py-4 text-sm text-zinc-200 font-mono"
+                            >
+                            <button
+                                @click="saveCommandCenter()"
+                                class="w-full sm:w-auto px-10 py-4 font-bold rounded-2xl transition-all duration-300 active:scale-95 shadow-lg"
+                                :class="commandCenterSaved ? 'bg-emerald-600 text-white' : 'bg-white text-black hover:bg-zinc-200'"
+                                x-text="commandCenterSaved ? t('settings.saved_restarting') : t('settings.save_apply')"
+                            ></button>
+                        </div>
                     </div>
 
                     <!-- RPC Token -->
-                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                    <div class="flex items-center justify-between p-8 glass rounded-[2.5rem] group hover:bg-white/[0.02] transition-colors">
                         <div>
-                            <div class="font-bold text-lg" x-text="t('settings.rpc_token')"></div>
-                            <div class="text-sm text-zinc-500" x-text="t('settings.rpc_token_desc')"></div>
+                            <div class="font-bold text-lg mb-1" x-text="t('settings.rpc_token')"></div>
+                            <div class="text-sm text-zinc-500 max-w-md" x-text="t('settings.rpc_token_desc')"></div>
                         </div>
-                        <div class="bg-black border border-zinc-700 rounded-xl px-4 py-2 text-sm text-zinc-300 font-mono" x-text="rpcToken || t('browser.loading')">
+                        <div class="bg-black/60 border border-white/5 rounded-2xl px-6 py-3 text-xs text-zinc-400 font-mono select-all hover:text-white transition-colors" x-text="rpcToken || t('browser.loading')">
                         </div>
                     </div>
 
                     <!-- Daemon Status -->
-                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                    <div class="flex items-center justify-between p-8 glass rounded-[2.5rem] group hover:bg-white/[0.02] transition-colors">
                         <div>
-                            <div class="font-bold text-lg" x-text="t('settings.daemon_status')"></div>
-                            <div class="text-sm text-zinc-500" x-text="t('settings.daemon_status_desc')"></div>
+                            <div class="font-bold text-lg mb-1" x-text="t('settings.daemon_status')"></div>
+                            <div class="text-sm text-zinc-500 max-w-md" x-text="t('settings.daemon_status_desc')"></div>
                         </div>
-                        <div class="flex items-center space-x-2">
-                            <span class="relative flex h-3 w-3">
+                        <div class="flex items-center gap-3 bg-emerald-500/10 px-5 py-3 rounded-2xl border border-emerald-500/20">
+                            <span class="relative flex h-2.5 w-2.5">
                               <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                              <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                              <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                             </span>
-                            <span class="text-emerald-400 font-medium" x-text="t('settings.daemon_active')"></span>
+                            <span class="text-emerald-400 font-bold text-xs uppercase tracking-widest" x-text="t('settings.daemon_active')"></span>
                         </div>
                     </div>
                 </div>
             </div>
 
             <!-- Privacy -->
-            <div x-show="page === 'privacy'" x-cloak class="space-y-8 max-w-2xl">
+            <div x-show="page === 'privacy'" x-cloak class="space-y-12 max-w-3xl animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div>
-                    <h2 class="text-3xl font-black mb-2" x-text="t('settings.privacy')"></h2>
+                    <h2 class="text-4xl font-black mb-2 tracking-tight" x-text="t('settings.privacy')"></h2>
+                    <p class="text-zinc-500 text-sm" x-text="t('settings.privacy_desc')"></p>
                 </div>
                 
                 <div class="space-y-4">
                     <!-- Block Ads -->
-                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                    <div class="flex items-center justify-between p-8 glass rounded-[2.5rem] group hover:bg-white/[0.02] transition-colors">
                         <div>
-                            <div class="font-bold text-lg" x-text="t('settings.block_ads')"></div>
-                            <div class="text-sm text-zinc-500" x-text="t('settings.block_ads_desc')"></div>
+                            <div class="font-bold text-lg mb-1" x-text="t('settings.block_ads')"></div>
+                            <div class="text-sm text-zinc-500 max-w-md" x-text="t('settings.block_ads_desc')"></div>
                         </div>
                         <label class="relative inline-flex items-center cursor-pointer">
                             <input type="checkbox" checked class="sr-only peer">
-                            <div class="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                            <div class="w-14 h-7 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 shadow-inner"></div>
                         </label>
                     </div>
 
-                    <!-- Do Not Track -->
-                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                    <!-- Clear History -->
+                    <div class="flex items-center justify-between p-8 glass rounded-[2.5rem] group hover:bg-white/[0.02] transition-colors">
                         <div>
-                            <div class="font-bold text-lg" x-text="t('settings.do_not_track')"></div>
-                            <div class="text-sm text-zinc-500" x-text="t('settings.do_not_track_desc')"></div>
-                        </div>
-                        <label class="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" checked class="sr-only peer">
-                            <div class="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-                        </label>
-                    </div>
-
-                    <!-- Clear Cookies -->
-                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
-                        <div>
-                            <div class="font-bold text-lg" x-text="t('settings.clear_cookies')"></div>
-                            <div class="text-sm text-zinc-500" x-text="t('settings.clear_cookies_desc')"></div>
+                            <div class="font-bold text-lg mb-1" x-text="t('settings.clear_history')"></div>
+                            <div class="text-sm text-zinc-500 max-w-md" x-text="t('settings.clear_history_desc')"></div>
                         </div>
                         <button 
                             @click="clearHistory()"
-                            class="bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl px-4 py-2 text-sm font-medium transition-colors"
+                            class="px-8 py-3 bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white border border-rose-500/20 rounded-2xl font-bold text-sm transition-all duration-300 active:scale-95"
                             x-text="t('settings.clear_button')"
                         >
                         </button>
                     </div>
-
-                    <!-- Clear History -->
-                    <div class="flex items-center justify-between p-6 bg-zinc-900 border border-zinc-800 rounded-[2rem]">
+                    
+                    <!-- Clear Cookies -->
+                    <div class="flex items-center justify-between p-8 glass rounded-[2.5rem] group hover:bg-white/[0.02] transition-colors">
                         <div>
-                            <div class="font-bold text-lg" x-text="t('settings.clear_history')"></div>
-                            <div class="text-sm text-zinc-500" x-text="t('settings.clear_history_desc')"></div>
+                            <div class="font-bold text-lg mb-1" x-text="t('settings.clear_cookies')"></div>
+                            <div class="text-sm text-zinc-500 max-w-md" x-text="t('settings.clear_cookies_desc')"></div>
                         </div>
                         <button 
                             @click="clearHistory()"
-                            class="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white border border-red-500/20 rounded-xl px-4 py-2 text-sm font-medium transition-colors"
+                            class="px-8 py-3 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 border border-white/5 rounded-2xl font-bold text-sm transition-all duration-300 active:scale-95"
                             x-text="t('settings.clear_button')"
                         >
                         </button>
@@ -275,6 +345,7 @@
         </div>
     </div>
 
+    <script src="zb://js/sdk.js"></script>
     <script>
         /*INJECT_SETTINGS*/
         window.SETTINGS = window.SETTINGS || { language: 'en', startupAction: 'newtab', homePage: 'zb://newtab', commandCenterAddr: '', searchEngine: 'ya.rus', enableSearch: true };
@@ -289,11 +360,10 @@
                 commandCenterSaved: false,
                 
                 async init() {
-                    const { ipcRenderer } = require('electron');
+                    const { ipcRenderer } = window.electron;
+                    await Zypo.init();
+                    this.i18n = Zypo.getTranslations();
                     this.commandCenterAddr = this.settings.commandCenterAddr || '';
-                    
-                    // 1. Load translations first
-                    await this.loadTranslations();
                     
                     // 2. Fetch runtime data
                     this.rpcToken = await ipcRenderer.invoke('get-rpc-token');
@@ -301,34 +371,28 @@
                     // 3. Listen for global settings changes
                     ipcRenderer.on('settings-updated', async () => {
                         this.settings = await ipcRenderer.invoke('get-settings');
-                        await this.loadTranslations();
+                        await Zypo.init();
+                        this.i18n = Zypo.getTranslations();
                     });
                 },
 
-                async loadTranslations() {
-                    const { ipcRenderer } = require('electron');
-                    this.i18n = await ipcRenderer.invoke('get-translations', this.settings.language);
-                },
-
                 t(path) {
-                    const keys = path.split('.');
-                    let result = this.i18n;
-                    for (const key of keys) { result = result ? result[key] : null; }
-                    return result || path;
+                    return Zypo.t(path, this.i18n);
                 },
 
                 async updateSetting(key, value) {
-                    const { ipcRenderer } = require('electron');
+                    const { ipcRenderer } = window.electron;
                     this.settings[key] = value;
                     await ipcRenderer.invoke('update-settings', { [key]: value });
                     if (key === 'language') {
-                        await this.loadTranslations();
+                        await Zypo.init();
+                        this.i18n = Zypo.getTranslations();
                         ipcRenderer.send('notify-settings-updated');
                     }
                 },
 
                 async saveCommandCenter() {
-                    const { ipcRenderer } = require('electron');
+                    const { ipcRenderer } = window.electron;
                     // Will trigger daemon restart if address changed
                     await ipcRenderer.invoke('update-settings', { commandCenterAddr: this.commandCenterAddr });
                     this.settings.commandCenterAddr = this.commandCenterAddr;
@@ -337,7 +401,7 @@
                 },
 
                 async clearHistory() {
-                    const { ipcRenderer } = require('electron');
+                    const { ipcRenderer } = window.electron;
                     ipcRenderer.send('clear-history');
                     ipcRenderer.sendToHost('zypo-alert', this.t('settings.history_cleared') || 'History Cleared', 'Your browsing history has been cleared.', 'info');
                 }

@@ -230,7 +230,7 @@
                 async init() {
                     try {
                         try {
-                            const electron = require('electron');
+                            const electron = window.electron;
                             this._ipc = electron.ipcRenderer;
                         } catch(e) {}
 
@@ -254,13 +254,7 @@
                 },
 
                 t(key) {
-                    const parts = key.split('.');
-                    let obj = this.i18n;
-                    for (const p of parts) {
-                        if (!obj) return key;
-                        obj = obj[p];
-                    }
-                    return obj || key;
+                    return Zypo.t(key, this.i18n);
                 },
 
                 async fetchData() {

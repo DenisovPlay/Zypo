@@ -6,51 +6,126 @@
     <link rel="stylesheet" href="zb://dist/tailwind.css">
     <script defer src="zb://dist/alpine.min.js"></script>
     <style>
-        body { background: #000; color: #fff; font-family: sans-serif; }
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+        
+        body { 
+            background-color: #050505; 
+            color: #ffffff; 
+            font-family: 'Outfit', sans-serif; 
+            overflow-x: hidden;
+        }
         [x-cloak] { display: none !important; }
+        
+        /* Smooth Scrollbar */
+        .custom-scroll::-webkit-scrollbar { width: 4px; }
+        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #222; border-radius: 4px; }
+        
+        /* Glassmorphism */
+        .glass {
+            background: rgba(20, 20, 20, 0.4);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .bg-glow {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 800px;
+            height: 800px;
+            background: radial-gradient(circle, rgba(245, 158, 11, 0.05) 0%, rgba(245, 158, 11, 0) 70%);
+            filter: blur(120px);
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        .bookmark-item {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .bookmark-item:hover {
+            background: rgba(255, 255, 255, 0.03);
+            transform: translateX(4px);
+        }
     </style>
 </head>
 <body 
     x-data="bookmarksData()"
+    x-init="init()"
     x-effect="document.title = t('bookmarks.title')"
-    class="min-h-screen flex flex-col items-center pt-16 px-8"
+    class="min-h-screen flex flex-col items-center pt-16 px-8 selection:bg-amber-500/30"
 >
-    <div class="w-full max-w-2xl">
-        <h1 class="text-4xl font-black mb-8" x-text="t('bookmarks.title')"></h1>
-        
-        <div class="relative mb-8">
+    <div class="bg-glow"></div>
+
+    <div class="w-full max-w-4xl z-10">
+        <!-- Header -->
+        <header class="flex items-center justify-between mb-12">
+            <div class="flex items-center gap-5">
+                <div class="w-14 h-14 rounded-3xl glass flex items-center justify-center text-amber-400 shadow-inner">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                </div>
+                <div>
+                    <h1 class="text-4xl font-black tracking-tight" x-text="t('bookmarks.title')"></h1>
+                    <p class="text-zinc-500 text-sm font-medium mt-1" x-text="filtered.length + ' ' + t('bookmarks.saved_items')"></p>
+                </div>
+            </div>
+        </header>
+
+        <!-- Search Bar -->
+        <div class="relative mb-10">
+            <div class="absolute left-6 top-1/2 -translate-y-1/2 text-zinc-500 z-10 pointer-events-none">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </div>
             <input 
                 type="text" 
                 x-model="query" 
                 :placeholder="t('bookmarks.search')" 
-                class="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-6 py-4 text-white outline-none focus:border-blue-500 transition-all shadow-inner"
+                class="w-full glass bg-white/5 border-none rounded-[2rem] pl-16 pr-8 py-5 text-lg outline-none focus:ring-2 focus:ring-amber-500/30 transition-all placeholder-zinc-600"
             >
         </div>
 
-        <div class="bg-zinc-900/50 border border-zinc-800 rounded-[2.5rem] overflow-hidden shadow-2xl">
-            <template x-if="filtered.length === 0">
-                <div class="p-12 text-center text-zinc-500 font-medium" x-text="query ? t('bookmarks.no_results') : t('bookmarks.empty')"></div>
-            </template>
-
-            <div class="divide-y divide-zinc-800">
-                <template x-for="b in filtered" :key="b.url">
-                    <div class="flex items-center justify-between p-6 hover:bg-white/[0.02] transition-colors group">
-                        <div class="flex flex-col gap-1 min-w-0 pr-4">
-                            <a :href="b.url" class="text-lg font-bold text-white hover:text-blue-400 transition-colors truncate" x-text="b.title || b.url"></a>
-                            <span class="text-xs font-mono text-zinc-500 truncate" x-text="b.url"></span>
+        <!-- Bookmarks List -->
+        <div class="glass rounded-[3rem] overflow-hidden mb-20 shadow-2xl divide-y divide-white/5">
+            <template x-for="b in filtered" :key="b.url">
+                <div class="bookmark-item p-6 flex items-center justify-between group">
+                    <div class="flex items-center gap-5 min-w-0 flex-1">
+                        <div class="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center text-lg shrink-0">
+                            <span x-text="getIcon(b)"></span>
                         </div>
+                        <div class="min-w-0">
+                            <a :href="b.url" class="font-bold text-zinc-100 truncate group-hover:text-amber-400 transition-colors block no-underline" x-text="b.title || 'No Title'"></a>
+                            <div class="text-xs text-zinc-500 font-mono mt-1 truncate max-w-md" x-text="b.url"></div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-4 shrink-0">
                         <button 
                             @click="deleteBookmark(b.url)" 
-                            class="px-4 py-2 bg-red-500/10 text-red-500 border border-red-500/20 rounded-xl font-bold text-xs hover:bg-red-500 hover:text-white transition-all opacity-0 group-hover:opacity-100"
-                            x-text="t('bookmarks.delete')"
+                            class="w-10 h-10 rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-rose-500 hover:text-white active:scale-90"
+                            :title="t('bookmarks.delete')"
                         >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                         </button>
+                        <a :href="b.url" class="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-zinc-500 hover:bg-white/10 hover:text-white transition-all active:scale-90">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                        </a>
                     </div>
-                </template>
+                </div>
+            </template>
+            
+            <!-- Empty State -->
+            <div x-show="filtered.length === 0" class="py-32 text-center">
+                <div class="w-20 h-20 rounded-full bg-zinc-900 flex items-center justify-center mx-auto mb-6 text-zinc-700">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                </div>
+                <p class="text-zinc-500 font-bold uppercase tracking-widest text-sm" x-text="query ? t('bookmarks.no_results') : t('bookmarks.empty')"></p>
             </div>
         </div>
     </div>
 
+    <script src="zb://js/sdk.js"></script>
     <script>
         /*INJECT_BOOKMARKS*/
         window.BOOKMARKS = window.BOOKMARKS || [];
@@ -62,26 +137,45 @@
                 i18n: {},
                 get filtered() {
                     if (!this.query) return this.bookmarks;
+                    const q = this.query.toLowerCase();
                     return this.bookmarks.filter(b => 
-                        b.title.toLowerCase().includes(this.query.toLowerCase()) || 
-                        b.url.toLowerCase().includes(this.query.toLowerCase())
+                        (b.title && b.title.toLowerCase().includes(q)) || 
+                        (b.url && b.url.toLowerCase().includes(q))
                     );
                 },
                 async init() {
-                    const { ipcRenderer } = require('electron');
-                    await this.loadTranslations();
-                    ipcRenderer.on('settings-updated', () => this.loadTranslations());
-                },
-                async loadTranslations() {
-                    const { ipcRenderer } = require('electron');
-                    const settings = await ipcRenderer.invoke('get-settings');
-                    this.i18n = await ipcRenderer.invoke('get-translations', settings.language);
+                    const { ipcRenderer } = window.electron;
+                    await Zypo.init();
+                    this.i18n = Zypo.getTranslations();
+                    
+                    ipcRenderer.on('settings-updated', async () => {
+                        await Zypo.init();
+                        this.i18n = Zypo.getTranslations();
+                    });
                 },
                 t(path) {
-                    const keys = path.split('.');
-                    let result = this.i18n;
-                    for (const key of keys) { result = result ? result[key] : null; }
-                    return result || path;
+                    return Zypo.t(path, this.i18n);
+                },
+                getIcon(b) {
+                    const SYSTEM_ICONS = {
+                        'newtab': '✨',
+                        'bookmarks': '⭐',
+                        'history': '🕒',
+                        'downloads': '📥',
+                        'settings': '⚙️',
+                        'about': 'ℹ️',
+                        'wallet': '💰',
+                        'network': '📡',
+                        'vpn': '🛡️',
+                        'domains.zypo': '🌐',
+                        'gov.zypo': '🏛️',
+                        'docs.zypo': '📚'
+                    };
+                    const url = b.url.toLowerCase();
+                    for (const [key, icon] of Object.entries(SYSTEM_ICONS)) {
+                        if (url.includes(key)) return icon;
+                    }
+                    return b.title ? b.title.charAt(0).toUpperCase() : '🌐';
                 },
                 deleteBookmark(url) {
                     window.location.href = `zb://delete-bookmark?url=${encodeURIComponent(url)}`;

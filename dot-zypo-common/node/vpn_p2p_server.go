@@ -34,8 +34,35 @@ func (n *ZypoNode) StartP2PVPNServer() {
 
 		targetAddr := strings.TrimSpace(parts[1])
 
-		// TODO: Add ACL/Restriction check here
-		log.Printf("[P2P VPN] Dialing %s on behalf of %s", targetAddr, s.Conn().RemotePeer())
+		// ACL/Restriction check
+		peerID := s.Conn().RemotePeer().String()
+		if n.EconomyManager != nil && n.EconomyManager.GetBalance(peerID) <= 0 {
+			log.Printf("[P2P VPN] Rejected %s: Insufficient balance", peerID)
+			s.Write([]byte("ERR: INSUFFICIENT_FUNDS\n"))
+			s.Close()
+			return
+		}
+
+		// SSRF Protection: Do not allow dialing local/private IPs
+		host, _, err := net.SplitHostPort(targetAddr)
+		if err != nil {
+			host = targetAddr
+		}
+		if ip := net.ParseIP(host); ip != nil {
+			if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() {
+				log.Printf("[P2P VPN] Rejected %s: SSRF attempt to %s", peerID, targetAddr)
+				s.Write([]byte("ERR: FORBIDDEN_TARGET\n"))
+				s.Close()
+				return
+			}
+		} else if host == "localhost" {
+			log.Printf("[P2P VPN] Rejected %s: SSRF attempt to localhost", peerID)
+			s.Write([]byte("ERR: FORBIDDEN_TARGET\n"))
+			s.Close()
+			return
+		}
+
+		log.Printf("[P2P VPN] Dialing %s on behalf of %s", targetAddr, peerID)
 
 		nc, err := net.DialTimeout("tcp", targetAddr, 10*time.Second)
 		if err != nil {

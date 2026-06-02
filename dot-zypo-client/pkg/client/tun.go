@@ -182,71 +182,7 @@ func (tm *TUNManager) Cleanup() {
 	tm.iface.Close()
 }
 
-func (tm *TUNManager) cleanupRoutes() {
-	log.Printf("[TUN] Cleaning up system routes...")
-	switch runtime.GOOS {
-	case "darwin":
-		tm.runCmd("route", "delete", "-net", "0.0.0.0/1")
-		tm.runCmd("route", "delete", "-net", "128.0.0.0/1")
-		for _, ip := range tm.excludedIPs {
-			tm.runCmd("route", "delete", ip)
-		}
-	case "linux":
-		tm.runCmd("ip", "route", "del", "0.0.0.0/1")
-		tm.runCmd("ip", "route", "del", "128.0.0.0/1")
-		for _, ip := range tm.excludedIPs {
-			tm.runCmd("ip", "route", "del", ip)
-		}
-	}
-}
-
-func (tm *TUNManager) configureRouting() error {
-	name := tm.iface.Name()
-
-	// 1. Add host routes for excluded IPs (Bootstrap/Relay) via original gateway
-	if tm.origGateway != "" {
-		for _, ip := range tm.excludedIPs {
-			log.Printf("[TUN] Excluding %s from VPN (via %s)", ip, tm.origGateway)
-			if runtime.GOOS == "darwin" {
-				tm.runCmd("route", "add", "-host", ip, tm.origGateway)
-			} else {
-				tm.runCmd("ip", "route", "add", ip, "via", tm.origGateway)
-			}
-		}
-	}
-
-	// 2. Override default route
-	switch runtime.GOOS {
-	case "darwin":
-		if err := tm.runCmd("route", "add", "-net", "0.0.0.0/1", "-interface", name); err != nil {
-			return err
-		}
-		return tm.runCmd("route", "add", "-net", "128.0.0.0/1", "-interface", name)
-	case "linux":
-		if err := tm.runCmd("ip", "route", "add", "0.0.0.0/1", "dev", name); err != nil {
-			return err
-		}
-		return tm.runCmd("ip", "route", "add", "128.0.0.0/1", "dev", name)
-	default:
-		return nil
-	}
-}
-
-func (tm *TUNManager) configureOS() error {
-	name := tm.iface.Name()
-	hostIP := "10.0.0.2"
-	gwIP := "10.0.0.1"
-
-	switch runtime.GOOS {
-	case "darwin":
-		return tm.runCmd("ifconfig", name, hostIP, gwIP, "up")
-	case "linux":
-		tm.runCmd("ip", "addr", "add", hostIP+"/24", "dev", name)
-		return tm.runCmd("ip", "link", "set", "dev", name, "up")
-	default:
-		return fmt.Errorf("OS %s requires manual IP configuration (%s)", runtime.GOOS, hostIP)
-	}
-}
+// OS-specific functions (cleanupRoutes, configureRouting, configureOS) are implemented in tun_linux.go, tun_darwin.go, etc.
 
 func (tm *TUNManager) setupHandlers() {
 	tcpForwarder := tcp.NewForwarder(tm.s, 0, 65535, func(r *tcp.ForwarderRequest) {

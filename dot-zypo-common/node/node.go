@@ -840,6 +840,28 @@ func (n *ZypoNode) IsPeerHealthy(pid peer.ID) bool {
 	return time.Since(lastSeen) < 2*time.Minute
 }
 
+func (n *ZypoNode) IsBootstrap(pid peer.ID) bool {
+	n.bootstrapMu.Lock()
+	defer n.bootstrapMu.Unlock()
+	for _, id := range n.BootstrapIDs {
+		if id == pid {
+			return true
+		}
+	}
+	return false
+}
+
+func (n *ZypoNode) IsCCConnected() bool {
+	n.bootstrapMu.Lock()
+	defer n.bootstrapMu.Unlock()
+	for _, bid := range n.BootstrapIDs {
+		if n.Host.Network().Connectedness(bid) == network.Connected {
+			return true
+		}
+	}
+	return false
+}
+
 func (n *ZypoNode) getStream(ctx context.Context, target peer.ID) (network.Stream, error) {
 	n.streamPoolMu.Lock()
 	if pool, ok := n.streamPool[target]; ok && len(pool) > 0 {

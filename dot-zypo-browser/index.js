@@ -191,17 +191,29 @@ function createWindow() {
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#000000',
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      webviewTag: true
+      nodeIntegration: false,
+      contextIsolation: true,
+      webviewTag: true,
+      preload: path.join(__dirname, 'js', 'preload_main.js')
     }
   })
 
   mainWindow.loadFile('index.html')
 }
 
-// Downloads history path
+// Downloads history path and read
 ipcMain.handle('get-downloads-path', () => path.join(app.getPath('userData'), 'downloads.json'))
+ipcMain.handle('get-downloads', () => {
+  const dlFile = path.join(app.getPath('userData'), 'downloads.json')
+  if (fs.existsSync(dlFile)) {
+    try { return JSON.parse(fs.readFileSync(dlFile, 'utf8')) } catch(e){}
+  }
+  return []
+})
+
+// Provide absolute app path for sandboxed preloads
+ipcMain.on('get-app-path-sync', (e) => { e.returnValue = __dirname; });
+ipcMain.on('get-preload-path-sync', (e, name) => { e.returnValue = path.join(__dirname, 'js', name); });
 
 // Bookmarks logic
 function getBookmarks() {
@@ -397,13 +409,28 @@ ipcMain.handle('update-settings', (e, newSettings) => {
 })
 
 ipcMain.handle('get-translations', async (e, lang) => {
-  const targetLang = lang || getSettings().language || 'en'
-  const localePath = path.join(__dirname, 'locales', `${targetLang}.json`)
-  if (fs.existsSync(localePath)) {
-    return JSON.parse(fs.readFileSync(localePath, 'utf8'))
+  try {
+    const settings = getSettings();
+    const targetLang = (typeof lang === 'string' ? lang : null) || settings.language || 'en';
+    const localesDir = path.join(__dirname, 'locales');
+    const localePath = path.join(localesDir, `${targetLang}.json`);
+    
+    if (fs.existsSync(localePath)) {
+      const content = fs.readFileSync(localePath, 'utf8');
+      return JSON.parse(content);
+    }
+    
+    const enPath = path.join(localesDir, 'en.json');
+    if (fs.existsSync(enPath)) {
+      return JSON.parse(fs.readFileSync(enPath, 'utf8'));
+    }
+    
+    console.error('[Main] Translation files not found');
+    return {};
+  } catch (err) {
+    console.error('[Main] Failed to load translations:', err);
+    return {};
   }
-  const enPath = path.join(__dirname, 'locales', 'en.json')
-  return JSON.parse(fs.readFileSync(enPath, 'utf8'))
 })
 
 ipcMain.on('notify-settings-updated', () => {
@@ -464,6 +491,16 @@ ipcMain.on('get-rpc-port-sync', (e) => { try { e.returnValue = RPC_PORT; } catch
 ipcMain.on('get-rpc-token-sync', (e) => { try { e.returnValue = RPC_TOKEN; } catch(err){} });
 ipcMain.on('get-last-peer-id-sync', (e) => { try { e.returnValue = LAST_PEER_ID; } catch(err){} });
 ipcMain.on('get-language-sync', (e) => { try { e.returnValue = getSettings().language || 'en'; } catch(err){} });
+
+ipcMain.on('log-error', (e, message) => {
+  try {
+    const os = require('os');
+    const logPath = path.join(os.tmpdir(), 'zypo-browser-error.log');
+    fs.appendFileSync(logPath, message);
+  } catch(err) {
+    console.error('Failed to log error:', err);
+  }
+});
 
 app.whenReady().then(async () => {
 RPC_PORT = await getAvailablePort()

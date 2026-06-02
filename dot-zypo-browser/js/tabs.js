@@ -120,8 +120,9 @@ function createTab(initialUrl = 'newtab') {
   wrapper.className = 'view-wrapper hidden w-full h-full';
 
   // Create Webview via HTML to avoid dynamic attribute crashes
-  const preloadPath = path.join(__dirname, 'js', 'preload.js');
-  wrapper.innerHTML = `<webview id="view-${id}" preload="${preloadPath}" ${isInternal ? 'nodeintegration webpreferences="contextIsolation=false, nodeIntegration=true"' : ''} style="display:inline-flex; width:100%; height:100%;"></webview>`;
+  const preloadName = isInternal ? 'preload_internal.js' : 'preload.js';
+  const preloadPath = window.electron.getPreloadPath(preloadName);
+  wrapper.innerHTML = `<webview id="view-${id}" preload="${preloadPath}" style="display:inline-flex; width:100%; height:100%;"></webview>`;
   const webview = wrapper.querySelector('webview');
   
   // Attach listeners

@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -15,19 +17,30 @@ import (
 	"github.com/dot-zypo/daemon/common/node"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-var globalNode *node.ZypoNode
+var (
+	rpcRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "zypo_rpc_requests_total",
+		Help: "The total number of RPC requests",
+	}, []string{"endpoint"})
+)
 
-func SetRPCNode(n *node.ZypoNode) {
-	globalNode = n
+type RPCServer struct {
+	nodeGetter func() *node.ZypoNode
+	token      string
 }
 
-func StartClientRPC(port int, token string) {
+func StartClientRPC(port int, token string, dataDir string, getter func() *node.ZypoNode) {
+	srv := &RPCServer{nodeGetter: getter, token: token}
 	mux := http.NewServeMux()
 
 	auth := func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
+			rpcRequestsTotal.WithLabelValues(r.URL.Path).Inc()
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
@@ -43,36 +56,38 @@ func StartClientRPC(port int, token string) {
 		}
 	}
 
-	mux.HandleFunc("/rpc", auth(func(w http.ResponseWriter, r *http.Request) { handleRpcProxy(globalNode, w, r) }))
-	mux.HandleFunc("/rpc/status", func(w http.ResponseWriter, r *http.Request) { handleRpcStatus(globalNode, w, r) })
-	mux.HandleFunc("/rpc/account", auth(func(w http.ResponseWriter, r *http.Request) { handleRpcAccount(globalNode, w, r) }))
-	mux.HandleFunc("/rpc/account/transfer", auth(func(w http.ResponseWriter, r *http.Request) { handleRpcAccountTransfer(globalNode, w, r) }))
+	mux.HandleFunc("/rpc", auth(func(w http.ResponseWriter, r *http.Request) { handleRpcProxy(srv.nodeGetter(), w, r) }))
+	mux.HandleFunc("/rpc/status", func(w http.ResponseWriter, r *http.Request) { handleRpcStatus(srv.nodeGetter(), w, r) })
+	mux.HandleFunc("/rpc/account", auth(func(w http.ResponseWriter, r *http.Request) { handleRpcAccount(srv.nodeGetter(), w, r) }))
+	mux.HandleFunc("/rpc/account/transfer", auth(func(w http.ResponseWriter, r *http.Request) { handleRpcAccountTransfer(srv.nodeGetter(), w, r) }))
 	mux.HandleFunc("/rpc/network/reconnect", auth(func(w http.ResponseWriter, r *http.Request) {
-		if globalNode != nil {
-			go globalNode.BootstrapNetwork()
+		n := srv.nodeGetter()
+		if n != nil {
+			go n.BootstrapNetwork()
 		}
 		json.NewEncoder(w).Encode(map[string]bool{"success": true})
 	}))
 	mux.HandleFunc("/rpc/dns/override", auth(func(w http.ResponseWriter, r *http.Request) {
-		handleRpcDnsOverride(globalNode, w, r)
+		handleRpcDnsOverride(srv.nodeGetter(), w, r)
 	}))
 	mux.HandleFunc("/rpc/vpn/list_nodes", auth(func(w http.ResponseWriter, r *http.Request) {
-		handleRpcVPNListNodes(globalNode, w, r)
+		handleRpcVPNListNodes(srv.nodeGetter(), w, r)
 	}))
 	mux.HandleFunc("/rpc/vpn/connect", auth(func(w http.ResponseWriter, r *http.Request) {
-		handleRpcVPNConnect(globalNode, w, r)
+		handleRpcVPNConnect(srv.nodeGetter(), w, r)
 	}))
 	mux.HandleFunc("/rpc/vpn/status", auth(func(w http.ResponseWriter, r *http.Request) {
-		handleRpcVPNStatus(globalNode, w, r)
+		handleRpcVPNStatus(srv.nodeGetter(), w, r)
 	}))
 	mux.HandleFunc("/rpc/vpn/disconnect", auth(func(w http.ResponseWriter, r *http.Request) {
-		handleRpcVPNStop(globalNode, w, r)
+		handleRpcVPNStop(srv.nodeGetter(), w, r)
 	}))
 	mux.HandleFunc("/rpc/vpn/config", auth(func(w http.ResponseWriter, r *http.Request) {
-		handleRpcVPNConfig(globalNode, w, r)
+		handleRpcVPNConfig(srv.nodeGetter(), w, r)
 	}))
 	mux.HandleFunc("/rpc/vpn/register_node", auth(func(w http.ResponseWriter, r *http.Request) {
-		if globalNode == nil {
+		n := srv.nodeGetter()
+		if n == nil {
 			http.Error(w, "Node initializing", 503)
 			return
 		}
@@ -81,11 +96,12 @@ func StartClientRPC(port int, token string) {
 			http.Error(w, "Invalid body", 400)
 			return
 		}
-		globalNode.RegisterVPNNodeDHT(&ann)
+		n.RegisterVPNNodeDHT(&ann)
 		json.NewEncoder(w).Encode(map[string]bool{"success": true})
 	}))
 	mux.HandleFunc("/rpc/vpn/settle_ticket", auth(func(w http.ResponseWriter, r *http.Request) {
-		if globalNode == nil {
+		n := srv.nodeGetter()
+		if n == nil {
 			http.Error(w, "Node initializing", 503)
 			return
 		}
@@ -94,17 +110,31 @@ func StartClientRPC(port int, token string) {
 			http.Error(w, "Failed to read body", 400)
 			return
 		}
-		if err := globalNode.EconomyManager.SettleVPNTicket(ticketBytes); err != nil {
+		if err := n.EconomyManager.SettleVPNTicket(ticketBytes); err != nil {
 			http.Error(w, err.Error(), 400)
 			return
 		}
 		json.NewEncoder(w).Encode(map[string]bool{"success": true})
 	}))
 
-	addr := fmt.Sprintf("0.0.0.0:%d", port)
-	fmt.Fprintf(os.Stdout, "RPC_SERVER_STARTING http://%s\n", addr)
+	// Enterprise Metrics
+	mux.Handle("/metrics", promhttp.Handler())
 
-	err := http.ListenAndServe(addr, mux)
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "FATAL_RPC_ERROR: %v\n", err)
+		os.Exit(1)
+	}
+
+	actualPort := listener.Addr().(*net.TCPAddr).Port
+	os.MkdirAll(dataDir, 0755)
+	portFile := filepath.Join(dataDir, ".rpc_port")
+	os.WriteFile(portFile, []byte(fmt.Sprintf("%d", actualPort)), 0644)
+
+	fmt.Fprintf(os.Stdout, "RPC_SERVER_STARTING http://127.0.0.1:%d\n", actualPort)
+
+	err = http.Serve(listener, mux)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL_RPC_ERROR: %v\n", err)
 		os.Exit(1)
@@ -215,25 +245,30 @@ func handleRpcStatus(n *node.ZypoNode, w http.ResponseWriter, r *http.Request) {
 			"peers":          0,
 			"balance":        0,
 			"economy_status": "initializing",
+			"cc_connected":   false,
 			"topology":       []interface{}{},
 		})
 		return
 	}
 
 	peers := n.Host.Network().Peers()
-	status := "offline"
-	balance := int64(0)
+	ccConnected := n.IsCCConnected()
 
-	if len(peers) > 0 {
+	status := "offline"
+	if ccConnected {
 		status = "synced"
-		balance = n.EconomyManager.GetBalance(n.Host.ID().String())
+	} else if len(peers) > 0 {
+		status = "mesh_only"
 	}
+
+	balance := n.EconomyManager.GetBalance(n.Host.ID().String())
 
 	// Build topology map for UI
 	type PeerInfo struct {
-		ID        string   `json:"id"`
-		Addrs     []string `json:"addrs"`
-		IsRelayed bool     `json:"is_relayed"`
+		ID          string   `json:"id"`
+		Addrs       []string `json:"addrs"`
+		IsRelayed   bool     `json:"is_relayed"`
+		IsBootstrap bool     `json:"is_bootstrap"`
 	}
 	topology := make([]PeerInfo, 0, len(peers))
 	for _, p := range peers {
@@ -247,10 +282,14 @@ func handleRpcStatus(n *node.ZypoNode, w http.ResponseWriter, r *http.Request) {
 				isRelayed = true
 			}
 		}
+
+		isBootstrap := n.IsBootstrap(p)
+
 		topology = append(topology, PeerInfo{
-			ID:        p.String(),
-			Addrs:     addrs,
-			IsRelayed: isRelayed,
+			ID:          p.String(),
+			Addrs:       addrs,
+			IsRelayed:   isRelayed,
+			IsBootstrap: isBootstrap,
 		})
 	}
 
@@ -266,6 +305,7 @@ func handleRpcStatus(n *node.ZypoNode, w http.ResponseWriter, r *http.Request) {
 		"peers":          len(peers),
 		"balance":        balance,
 		"economy_status": status,
+		"cc_connected":   ccConnected,
 		"vpn":            vpnStatus,
 		"topology":       topology,
 	})

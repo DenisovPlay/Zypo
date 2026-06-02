@@ -1,11 +1,8 @@
 // js/globals.js
-const { ipcRenderer } = require('electron');
-const path = require('path');
-const fs = require('fs');
-const os = require('os');
-const ERROR_LOG = path.join(os.tmpdir(), 'zypo-browser-error.log');
+const { ipcRenderer } = window.electron;
+
 window.addEventListener('error', e => {
-  fs.appendFileSync(ERROR_LOG, (e.error ? e.error.stack : e.message) + '\n');
+  ipcRenderer.send('log-error', (e.error ? e.error.stack : e.message) + '\\n');
 });
 // Global Shortcuts
 window.addEventListener('keydown', (e) => {
@@ -40,7 +37,7 @@ window.addEventListener('keydown', (e) => {
   }
 });
 window.addEventListener('unhandledrejection', e => {
-  fs.appendFileSync(ERROR_LOG, (e.reason ? e.reason.stack : String(e.reason)) + '\n');
+  ipcRenderer.send('log-error', (e.reason ? e.reason.stack : String(e.reason)) + '\\n');
 });
 
 const tabsContainer = document.getElementById('tabs-container');
