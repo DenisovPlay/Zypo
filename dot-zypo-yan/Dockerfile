@@ -1,8 +1,5 @@
 FROM golang:1.26-alpine AS builder
 
-# Устанавливаем зависимости для сборки CGO (нужно для go-sqlite3)
-RUN apk add --no-cache gcc musl-dev
-
 WORKDIR /app
 
 # Копируем весь монорепозиторий, чтобы работал replace в go.mod
@@ -10,7 +7,7 @@ COPY . .
 
 # Переходим в директорию yan и собираем
 WORKDIR /app/dot-zypo-yan
-RUN CGO_ENABLED=1 GOOS=linux go build -o zypo-yan main.go crawler.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o zypo-yan main.go crawler.go
 
 # Финальный легковесный образ
 FROM alpine:latest

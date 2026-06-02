@@ -39,7 +39,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to init node: %v", err)
 	}
-	defer n.Host.Close()
+	defer n.Close()
 
 	// Plug in hosting logic
 	n.ResourceResolver = func(req *node.ZypoRequest, domain, path string, bodyReader io.Reader) (node.ZypoHeader, io.ReadCloser, error) {

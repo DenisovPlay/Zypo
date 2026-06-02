@@ -40,7 +40,9 @@ func StartTUN(name string, vpnClient *P2PVPNClient, excludedIPs []string) (*TUNM
 	config := water.Config{DeviceType: water.TUN}
 	config.Name = name
 	iface, err := water.New(config)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
@@ -48,8 +50,10 @@ func StartTUN(name string, vpnClient *P2PVPNClient, excludedIPs []string) (*TUNM
 	})
 
 	linkID := channel.New(512, 1500, "")
-	if terr := s.CreateNIC(1, linkID); terr != nil { return nil, fmt.Errorf("NIC error: %v", terr) }
-	
+	if terr := s.CreateNIC(1, linkID); terr != nil {
+		return nil, fmt.Errorf("NIC error: %v", terr)
+	}
+
 	// CRITICAL: Allow gvisor to accept packets destined for any IP
 	s.SetPromiscuousMode(1, true)
 	s.SetSpoofing(1, true)
@@ -58,7 +62,9 @@ func StartTUN(name string, vpnClient *P2PVPNClient, excludedIPs []string) (*TUNM
 		buf := make([]byte, 1500)
 		for {
 			n, err := iface.Read(buf)
-			if err != nil { return }
+			if err != nil {
+				return
+			}
 			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(buf[:n])})
 			linkID.InjectInbound(ipv4.ProtocolNumber, pkt)
 			pkt.DecRef()
@@ -68,9 +74,13 @@ func StartTUN(name string, vpnClient *P2PVPNClient, excludedIPs []string) (*TUNM
 	go func() {
 		for {
 			pkt := linkID.ReadContext(context.Background())
-			if pkt == nil { return }
+			if pkt == nil {
+				return
+			}
 			buf := make([]byte, 0, pkt.Size())
-			for _, v := range pkt.AsSlices() { buf = append(buf, v...) }
+			for _, v := range pkt.AsSlices() {
+				buf = append(buf, v...)
+			}
 			iface.Write(buf)
 		}
 	}()
@@ -85,7 +95,7 @@ func StartTUN(name string, vpnClient *P2PVPNClient, excludedIPs []string) (*TUNM
 
 	tm := &TUNManager{iface: iface, s: s, vpnClient: vpnClient, excludedIPs: excludedIPs}
 	GlobalTUN = tm
-	
+
 	// Exclude system DNS servers to prevent DNS drops (since UDP proxy is not implemented)
 	if b, err := os.ReadFile("/etc/resolv.conf"); err == nil {
 		lines := strings.Split(string(b), "\n")
@@ -102,7 +112,7 @@ func StartTUN(name string, vpnClient *P2PVPNClient, excludedIPs []string) (*TUNM
 
 	tm.detectGateway()
 	tm.setupHandlers()
-	
+
 	log.Printf("[TUN] Interface %s initialized (Down/Idle).", name)
 	return tm, nil
 }
@@ -118,7 +128,9 @@ func (tm *TUNManager) runCmd(name string, args ...string) error {
 }
 
 func (tm *TUNManager) Activate() error {
-	if tm.isActive { return nil }
+	if tm.isActive {
+		return nil
+	}
 	log.Printf("[TUN] Activating system-wide routing...")
 
 	// 1. Bring interface up and set IP
@@ -137,10 +149,12 @@ func (tm *TUNManager) Activate() error {
 }
 
 func (tm *TUNManager) Deactivate() {
-	if !tm.isActive { return }
+	if !tm.isActive {
+		return
+	}
 	log.Printf("[TUN] Deactivating system-wide routing...")
 	tm.cleanupRoutes()
-	
+
 	// Bring interface down
 	name := tm.iface.Name()
 	if runtime.GOOS == "darwin" {
@@ -204,10 +218,14 @@ func (tm *TUNManager) configureRouting() error {
 	// 2. Override default route
 	switch runtime.GOOS {
 	case "darwin":
-		if err := tm.runCmd("route", "add", "-net", "0.0.0.0/1", "-interface", name); err != nil { return err }
+		if err := tm.runCmd("route", "add", "-net", "0.0.0.0/1", "-interface", name); err != nil {
+			return err
+		}
 		return tm.runCmd("route", "add", "-net", "128.0.0.0/1", "-interface", name)
 	case "linux":
-		if err := tm.runCmd("ip", "route", "add", "0.0.0.0/1", "dev", name); err != nil { return err }
+		if err := tm.runCmd("ip", "route", "add", "0.0.0.0/1", "dev", name); err != nil {
+			return err
+		}
 		return tm.runCmd("ip", "route", "add", "128.0.0.0/1", "dev", name)
 	default:
 		return nil
@@ -234,7 +252,10 @@ func (tm *TUNManager) setupHandlers() {
 	tcpForwarder := tcp.NewForwarder(tm.s, 0, 65535, func(r *tcp.ForwarderRequest) {
 		var w waiter.Queue
 		ep, terr := r.CreateEndpoint(&w)
-		if terr != nil { r.Complete(true); return }
+		if terr != nil {
+			r.Complete(true)
+			return
+		}
 		r.Complete(false)
 		go tm.handleTCPConn(gonet.NewTCPConn(&w, ep))
 	})
@@ -243,13 +264,15 @@ func (tm *TUNManager) setupHandlers() {
 
 func (tm *TUNManager) handleTCPConn(conn net.Conn) {
 	defer conn.Close()
-	if tm.vpnClient == nil { return }
+	if tm.vpnClient == nil {
+		return
+	}
 
 	// In a transparent proxy, LocalAddr is the destination the client was trying to reach,
 	// and RemoteAddr is the client's own source IP.
 	targetAddr := conn.LocalAddr().String()
 	log.Printf("[TUN] Intercepted TCP connection to %s, forwarding via P2P VPN...", targetAddr)
-	
+
 	vpnConn, err := tm.vpnClient.Dial("tcp", targetAddr)
 	if err != nil {
 		log.Printf("[TUN ERR] Failed to connect VPN stream for %s: %v", targetAddr, err)
@@ -268,7 +291,10 @@ func (tm *TUNManager) handleTCPConn(conn net.Conn) {
 				vpnConn.Write(buf[:n])
 				atomic.AddUint64(&tm.BytesSent, uint64(n))
 			}
-			if err != nil { errChan <- err; return }
+			if err != nil {
+				errChan <- err
+				return
+			}
 		}
 	}()
 	go func() {
@@ -279,7 +305,10 @@ func (tm *TUNManager) handleTCPConn(conn net.Conn) {
 				conn.Write(buf[:n])
 				atomic.AddUint64(&tm.BytesReceived, uint64(n))
 			}
-			if err != nil { errChan <- err; return }
+			if err != nil {
+				errChan <- err
+				return
+			}
 		}
 	}()
 

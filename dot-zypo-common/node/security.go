@@ -18,7 +18,7 @@ type SecureChannel struct {
 }
 
 func NewSecureChannel(initiator bool) (*SecureChannel, error) {
-	// Noise XX requires static keys to be exchanged. 
+	// Noise XX requires static keys to be exchanged.
 	// We generate a temporary static keypair for this session.
 	staticKey, err := noise.DH25519.GenerateKeypair(rand.Reader)
 	if err != nil {
@@ -26,10 +26,10 @@ func NewSecureChannel(initiator bool) (*SecureChannel, error) {
 	}
 
 	conf := noise.Config{
-		CipherSuite: noise.NewCipherSuite(noise.DH25519, noise.CipherAESGCM, noise.HashSHA256),
-		Random:      rand.Reader,
-		Pattern:     noise.HandshakeXX,
-		Initiator:   initiator,
+		CipherSuite:   noise.NewCipherSuite(noise.DH25519, noise.CipherAESGCM, noise.HashSHA256),
+		Random:        rand.Reader,
+		Pattern:       noise.HandshakeXX,
+		Initiator:     initiator,
 		StaticKeypair: staticKey,
 	}
 
@@ -89,11 +89,15 @@ func (sc *SecureChannel) Step(in []byte) ([]byte, error) {
 }
 
 func (sc *SecureChannel) Encrypt(payload []byte) ([]byte, error) {
-	if sc.sendCipher == nil { return nil, fmt.Errorf("not ready") }
+	if sc.sendCipher == nil {
+		return nil, fmt.Errorf("not ready")
+	}
 	return sc.sendCipher.Encrypt(nil, nil, payload)
 }
 
 func (sc *SecureChannel) Decrypt(data []byte) ([]byte, error) {
-	if sc.recvCipher == nil { return nil, fmt.Errorf("not ready") }
+	if sc.recvCipher == nil {
+		return nil, fmt.Errorf("not ready")
+	}
 	return sc.recvCipher.Decrypt(nil, nil, data)
 }

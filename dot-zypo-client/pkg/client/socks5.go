@@ -49,4 +49,3 @@ func (m *SOCKS5Manager) dialViaVPN(ctx context.Context, network, addr string) (n
 
 	return conn, nil
 }
-

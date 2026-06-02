@@ -35,7 +35,7 @@ type ZypoHeader struct {
 func (n *ZypoNode) handleZypoStream(s network.Stream) {
 	defer s.Close()
 	reader := bufio.NewReader(s)
-	
+
 	// 1. Read Request Header
 	s.SetReadDeadline(time.Now().Add(30 * time.Second))
 	line, err := reader.ReadString('\n')
@@ -58,6 +58,8 @@ func (n *ZypoNode) handleZypoStream(s network.Stream) {
 		bodyReader = io.LimitReader(reader, req.Size)
 	} else if req.Method == "GET" || req.Method == "HEAD" {
 		bodyReader = bytes.NewReader(nil)
+	} else {
+		bodyReader = io.LimitReader(reader, 10*1024*1024)
 	}
 
 	log.Printf("[P2P] %s: %s %s (Size: %d)", s.Conn().RemotePeer().String()[:8], req.Action, req.Resource, req.Size)
@@ -69,14 +71,18 @@ func (n *ZypoNode) handleZypoStream(s network.Stream) {
 	if req.Action == "fetch" || req.Action == "websocket" {
 		parts := strings.SplitN(req.Resource, "/", 2)
 		domain, path := parts[0], "index.html"
-		if len(parts) > 1 && parts[1] != "" { path = parts[1] }
+		if len(parts) > 1 && parts[1] != "" {
+			path = parts[1]
+		}
 		if n.ResourceResolver != nil {
 			header, bodyStream, err = n.ResourceResolver(&req, domain, path, bodyReader)
 		} else {
 			header = ZypoHeader{Status: 501}
 			err = fmt.Errorf("no resolver")
 		}
-		if err != nil { header = ZypoHeader{Status: 404} }
+		if err != nil {
+			header = ZypoHeader{Status: 404}
+		}
 	} else if req.Action == "ping" {
 		header = ZypoHeader{Status: 200}
 	} else if req.Action == "vpn_probe" {
@@ -128,8 +134,12 @@ func (n *ZypoNode) handleZypoStream(s network.Stream) {
 		if n.cfg.IsCommandCenter {
 			cmd := "submit_domain"
 			header, bodyStream, err = n.ResourceResolver(&req, "api.zypo", cmd, bodyReader)
-		} else { header = ZypoHeader{Status: 403} }
-	} else { header = ZypoHeader{Status: 400} }
+		} else {
+			header = ZypoHeader{Status: 403}
+		}
+	} else {
+		header = ZypoHeader{Status: 400}
+	}
 
 	// Ensure request body is fully drained before sending response to keep stream in sync
 	if req.Size != 0 && req.Method != "GET" && req.Method != "HEAD" {
@@ -170,37 +180,47 @@ func (n *ZypoNode) ProxyRequest(target peer.ID, resource string, w http.Response
 	if target == n.Host.ID() {
 		parts := strings.SplitN(resource, "/", 2)
 		domain, path := parts[0], "index.html"
-		if len(parts) > 1 && parts[1] != "" { path = parts[1] }
+		if len(parts) > 1 && parts[1] != "" {
+			path = parts[1]
+		}
 		zreq := &ZypoRequest{Action: "fetch", Resource: resource, Method: r.Method, Headers: r.Header, Size: r.ContentLength}
 		header, bodyStream, err := n.ResourceResolver(zreq, domain, path, r.Body)
-		if err != nil { return err }
-		if bodyStream != nil { defer bodyStream.Close() }
+		if err != nil {
+			return err
+		}
+		if bodyStream != nil {
+			defer bodyStream.Close()
+		}
 		w.Header().Set("Content-Type", header.Mime)
 		for k, v := range header.Headers {
-			for _, val := range v { w.Header().Add(k, val) }
+			for _, val := range v {
+				w.Header().Add(k, val)
+			}
 		}
 		w.WriteHeader(header.Status)
-		if bodyStream != nil { io.Copy(w, bodyStream) }
+		if bodyStream != nil {
+			io.Copy(w, bodyStream)
+		}
 		return nil
 	}
-	
+
 	ctx, cancel := context.WithTimeout(n.GetContext(), 30*time.Second)
 	defer cancel()
 
 	s, err := n.Host.NewStream(ctx, target, ZypoProtocolID)
 	if err != nil {
 		log.Printf("[P2P] Direct dial failed to %s: %v. Attempting via Circuit Relay...", target, err)
-		
+
 		// Attempt routing via active public peers (like CC) using /p2p-circuit
 		var relayedStream network.Stream
 		var relayErr error
-		
+
 		for _, p := range n.Host.Network().Peers() {
 			relayAddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/p2p/%s/p2p-circuit/p2p/%s", p.String(), target.String()))
 			if err == nil {
 				// Add to peerstore to tell libp2p how to route it
 				n.Host.Peerstore().AddAddr(target, relayAddr, time.Minute)
-				
+
 				// Try dialing again using the new circuit route
 				relayedStream, relayErr = n.Host.NewStream(ctx, target, ZypoProtocolID)
 				if relayErr == nil {
@@ -219,22 +239,24 @@ func (n *ZypoNode) ProxyRequest(target peer.ID, resource string, w http.Response
 	defer s.Close()
 
 	action := "fetch"
-	if strings.ToLower(r.Header.Get("Upgrade")) == "websocket" { action = "websocket" }
+	if strings.ToLower(r.Header.Get("Upgrade")) == "websocket" {
+		action = "websocket"
+	}
 
 	req := ZypoRequest{
-		Action:   action, 
-		Resource: resource, 
-		Method:   r.Method, 
+		Action:   action,
+		Resource: resource,
+		Method:   r.Method,
 		Headers:  r.Header,
 		Size:     r.ContentLength,
 	}
-	
+
 	s.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	reqBytes, _ := json.Marshal(req)
 	if _, err := s.Write(append(reqBytes, '\n')); err != nil {
 		return err
 	}
-	
+
 	if r.Method != "GET" && r.Method != "HEAD" && r.ContentLength != 0 {
 		s.SetWriteDeadline(time.Now().Add(1 * time.Minute))
 		if _, err := io.Copy(s, r.Body); err != nil {
@@ -256,7 +278,9 @@ func (n *ZypoNode) ProxyRequest(target peer.ID, resource string, w http.Response
 
 	w.Header().Set("Content-Type", header.Mime)
 	for k, v := range header.Headers {
-		for _, val := range v { w.Header().Add(k, val) }
+		for _, val := range v {
+			w.Header().Add(k, val)
+		}
 	}
 	w.WriteHeader(header.Status)
 
@@ -267,7 +291,7 @@ func (n *ZypoNode) ProxyRequest(target peer.ID, resource string, w http.Response
 
 	// Clear read deadline for large file transfers
 	s.SetReadDeadline(time.Time{})
-	
+
 	if header.Size > 0 {
 		lr := io.LimitReader(reader, header.Size)
 		io.Copy(w, lr)

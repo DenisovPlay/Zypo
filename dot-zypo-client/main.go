@@ -58,7 +58,7 @@ func main() {
 	}
 	fmt.Fprintf(os.Stdout, "NODE_PEER_ID %s\n", nReady.Host.ID().String())
 	client.SetRPCNode(nReady) // Update the global for RPC handlers
-	defer nReady.Host.Close()
+	defer nReady.Close()
 
 	// Plug in hosting logic (for local site previews or future usage)
 	nReady.ResourceResolver = func(req *node.ZypoRequest, domain, path string, bodyReader io.Reader) (node.ZypoHeader, io.ReadCloser, error) {

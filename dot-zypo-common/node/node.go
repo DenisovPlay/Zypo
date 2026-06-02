@@ -14,50 +14,49 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
 	record "github.com/libp2p/go-libp2p-record"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
-	"github.com/ipfs/go-cid"
-	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	"github.com/libp2p/go-libp2p/p2p/security/noise"
+	libp2pquic "github.com/libp2p/go-libp2p/p2p/transport/quic"
 	libp2ptcp "github.com/libp2p/go-libp2p/p2p/transport/tcp"
 	libp2pws "github.com/libp2p/go-libp2p/p2p/transport/websocket"
-	libp2pquic "github.com/libp2p/go-libp2p/p2p/transport/quic"
 	libp2pwebtransport "github.com/libp2p/go-libp2p/p2p/transport/webtransport"
 	"github.com/multiformats/go-multiaddr"
 )
 
 const (
-	ZypoProtocolID   = "/zypo/transport/2.0.0"
-	DiscoveryTag     = "dot-zypo-mesh"
+	ZypoProtocolID = "/zypo/transport/2.0.0"
+	DiscoveryTag   = "dot-zypo-mesh"
 	// CID representing the "Command Center Service" for global DHT rendezvous
-	CC_RENDEZVOUS_CID = "bafkreigh2ak363shsr5u4u47bc3cc6ot76sqscvxv277dtkcycyu4m3y3e" 
+	CC_RENDEZVOUS_CID = "bafkreigh2ak363shsr5u4u47bc3cc6ot76sqscvxv277dtkcycyu4m3y3e"
 )
 
 type ZypoNode struct {
-	Host                 host.Host
-	DHT                  *dht.IpfsDHT
-	ctx                  context.Context
-	cfg                  Config
-	PrivKey              crypto.PrivKey
-	validator            *ZypoValidator
-	ResourceResolver     func(req *ZypoRequest, domain, path string, bodyReader io.Reader) (ZypoHeader, io.ReadCloser, error)
-	EconomyManager       *EconomyManager
-	BootstrapIDs         []peer.ID
-	localDNSMu           sync.RWMutex
-	localDNSOverrides    map[string]LocalDNSOverride
-	bootstrapMu          sync.Mutex
-	bootstrapHealth      map[peer.ID]time.Time // last successful interaction
-	dhtRefreshTrigger    chan struct{}
-	streamPoolMu         sync.Mutex
-	streamPool           map[peer.ID][]network.Stream
+	Host              host.Host
+	DHT               *dht.IpfsDHT
+	ctx               context.Context
+	cfg               Config
+	PrivKey           crypto.PrivKey
+	validator         *ZypoValidator
+	ResourceResolver  func(req *ZypoRequest, domain, path string, bodyReader io.Reader) (ZypoHeader, io.ReadCloser, error)
+	EconomyManager    *EconomyManager
+	BootstrapIDs      []peer.ID
+	localDNSMu        sync.RWMutex
+	localDNSOverrides map[string]LocalDNSOverride
+	bootstrapMu       sync.Mutex
+	bootstrapHealth   map[peer.ID]time.Time // last successful interaction
+	dhtRefreshTrigger chan struct{}
+	streamPoolMu      sync.Mutex
+	streamPool        map[peer.ID][]network.Stream
 }
-
 
 func loadOrGenerateKey(path string) (crypto.PrivKey, error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -144,7 +143,7 @@ func NewNode(ctx context.Context, cfg Config) (*ZypoNode, error) {
 
 	var h host.Host
 	var kDHT *dht.IpfsDHT
-	
+
 	zypoVal := &ZypoValidator{OraclePubKey: nil} // Populate later if not CC
 
 	validator := record.NamespacedValidator{
@@ -169,7 +168,9 @@ func NewNode(ctx context.Context, cfg Config) (*ZypoNode, error) {
 				peerChan := make(chan peer.AddrInfo)
 				go func() {
 					defer close(peerChan)
-					if kDHT == nil || h == nil { return }
+					if kDHT == nil || h == nil {
+						return
+					}
 					select {
 					case <-time.After(15 * time.Second):
 					case <-ctx.Done():
@@ -179,14 +180,20 @@ func NewNode(ctx context.Context, cfg Config) (*ZypoNode, error) {
 					defer cancel()
 					cid, _ := cid.Parse("bafkreigh2ak363shsr5u4u47bc3cc6ot76sqscvxv277dtkcycyu4m3y3e")
 					providers, err := kDHT.FindProviders(ctx, cid)
-					if err != nil { return }
+					if err != nil {
+						return
+					}
 					count := 0
 					for _, p := range providers {
-						if p.ID == h.ID() { continue }
+						if p.ID == h.ID() {
+							continue
+						}
 						select {
 						case peerChan <- p:
 							count++
-							if count >= numPeers { return }
+							if count >= numPeers {
+								return
+							}
 						case <-ctx.Done():
 							return
 						}
@@ -210,9 +217,14 @@ func NewNode(ctx context.Context, cfg Config) (*ZypoNode, error) {
 		dhtMode = dht.ModeServer
 	}
 
-	log.Printf("[Mesh] Initializing Kademlia DHT (Prefix: /zypo, Mode: %s)...", func()string{if cfg.IsCommandCenter{return "Server"};return "Auto"}())
-	kDHT, err = dht.New(ctx, h, 
-		dht.Mode(dhtMode), 
+	log.Printf("[Mesh] Initializing Kademlia DHT (Prefix: /zypo, Mode: %s)...", func() string {
+		if cfg.IsCommandCenter {
+			return "Server"
+		}
+		return "Auto"
+	}())
+	kDHT, err = dht.New(ctx, h,
+		dht.Mode(dhtMode),
 		dht.Validator(validator),
 		dht.ProtocolPrefix("/zypo"),
 		// Разрешаем приватные/локальные IP-адреса, чтобы работало в Docker, LAN и через VPN (ZeroTier)
@@ -235,16 +247,16 @@ func NewNode(ctx context.Context, cfg Config) (*ZypoNode, error) {
 	}
 
 	node := &ZypoNode{
-		Host:                 h,
-		DHT:                  kDHT,
-		ctx:                  ctx,
-		cfg:                  actualCfg,
-		PrivKey:              priv,
-		validator:            zypoVal,
-		localDNSOverrides:    make(map[string]LocalDNSOverride),
-		bootstrapHealth:      make(map[peer.ID]time.Time),
-		dhtRefreshTrigger:    make(chan struct{}, 1),
-		streamPool:           make(map[peer.ID][]network.Stream),
+		Host:              h,
+		DHT:               kDHT,
+		ctx:               ctx,
+		cfg:               actualCfg,
+		PrivKey:           priv,
+		validator:         zypoVal,
+		localDNSOverrides: make(map[string]LocalDNSOverride),
+		bootstrapHealth:   make(map[peer.ID]time.Time),
+		dhtRefreshTrigger: make(chan struct{}, 1),
+		streamPool:        make(map[peer.ID][]network.Stream),
 	}
 	node.EconomyManager = NewEconomyManager(node, cfg.DataDir)
 
@@ -258,9 +270,9 @@ func NewNode(ctx context.Context, cfg Config) (*ZypoNode, error) {
 func (n *ZypoNode) announceRelayPresence() {
 	// Wait for network to stabilize
 	time.Sleep(30 * time.Second)
-	
+
 	relayCid, _ := cid.Parse("bafkreigh2ak363shsr5u4u47bc3cc6ot76sqscvxv277dtkcycyu4m3y3e")
-	
+
 	for {
 		// Bullet-proof: Check if we have any public-looking address
 		hasPublic := false
@@ -382,7 +394,7 @@ func (n *ZypoNode) Start(extraPeers []string) error {
 		mdnsService := mdns.NewMdnsService(n.Host, DiscoveryTag, &discoveryNotifee{h: n.Host, node: n})
 		mdnsService.Start()
 	}
-	
+
 	// Always run UDP broadcast scanner as fallback/supplement to mDNS
 	log.Println("Network: Starting LAN UDP Scanner for isolated environments...")
 	n.StartLANScanner()
@@ -423,7 +435,7 @@ func (n *ZypoNode) Start(extraPeers []string) error {
 		if err != nil || addrInfo.ID == n.Host.ID() {
 			continue
 		}
-		
+
 		if connectedSet[addrInfo.ID.String()] {
 			continue
 		}
@@ -453,7 +465,7 @@ func (n *ZypoNode) ensureBootstrapConnectivityLoop() {
 	interval := 5 * time.Second
 	timer := time.NewTimer(interval)
 	defer timer.Stop()
-	
+
 	zeroPeerBackoff := 2 * time.Second
 
 	for {
@@ -463,7 +475,7 @@ func (n *ZypoNode) ensureBootstrapConnectivityLoop() {
 			if peerCount == 0 {
 				log.Printf("Network: CRITICAL - 0 peers connected. Attempting aggressive re-bootstrap (interval=%v)...", zeroPeerBackoff)
 				n.BootstrapNetwork()
-				
+
 				// Increase backoff for next attempt if we still have 0 peers, but cap it at 30s
 				zeroPeerBackoff *= 2
 				if zeroPeerBackoff > 30*time.Second {
@@ -475,7 +487,7 @@ func (n *ZypoNode) ensureBootstrapConnectivityLoop() {
 				zeroPeerBackoff = 2 * time.Second
 				interval = 5 * time.Second
 			}
-			
+
 			timer.Reset(interval)
 		case <-n.ctx.Done():
 			return
@@ -570,12 +582,15 @@ func (n *ZypoNode) connectToBootstrap(addrStr string) *peer.AddrInfo {
 	}
 
 	log.Printf("Connected to bootstrap peer: %s", addrInfo.ID)
-	
+
 	// Track this ID as a trusted bootstrap peer
 	exists := false
 	n.bootstrapMu.Lock()
 	for _, id := range n.BootstrapIDs {
-		if id == addrInfo.ID { exists = true; break }
+		if id == addrInfo.ID {
+			exists = true
+			break
+		}
 	}
 	if !exists {
 		n.BootstrapIDs = append(n.BootstrapIDs, addrInfo.ID)
@@ -611,9 +626,13 @@ func (n *discoveryNotifee) HandlePeerFound(pi peer.AddrInfo) {
 }
 
 func (n *ZypoNode) loadOraclePubKey() {
-	if n.cfg.IsCommandCenter { return }
+	if n.cfg.IsCommandCenter {
+		return
+	}
 	b, err := os.ReadFile(filepath.Join(n.cfg.DataDir, "oracle.pub"))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	pub, err := crypto.UnmarshalPublicKey(b)
 	if err == nil {
 		n.validator.OraclePubKey = pub
@@ -639,7 +658,7 @@ func (n *ZypoNode) resolveOraclePubKey(pid peer.ID) {
 	}
 	n.validator.OraclePubKey = pub
 	log.Printf("[DHT] Oracle public key resolved from peerstore for peer %s", pid)
-	
+
 	// Persist for offline verification
 	b, err := crypto.MarshalPublicKey(pub)
 	if err == nil {
@@ -669,7 +688,7 @@ func (n *ZypoNode) BootstrapNetwork() error {
 	return nil
 }
 
-// AnnounceDomain triggers a persistent background announcement of a domain 
+// AnnounceDomain triggers a persistent background announcement of a domain
 // to the Command Center until success.
 func (n *ZypoNode) AnnounceDomain(domain string) {
 	n.AnnounceDomainToCC(domain)
@@ -684,7 +703,7 @@ func (n *ZypoNode) AnnounceDomainToCC(domain string) {
 	go func() {
 		for {
 			log.Printf("[Mesh] Attempting to announce domain %s to Command Center...", domain)
-			
+
 			// Collect all candidate peers (bootstrap first, then any connected peer).
 			seen := make(map[peer.ID]bool)
 			var targets []peer.ID
@@ -706,18 +725,22 @@ func (n *ZypoNode) AnnounceDomainToCC(domain string) {
 
 			success := false
 			for _, target := range targets {
-				if target == n.Host.ID() { continue }
-				
+				if target == n.Host.ID() {
+					continue
+				}
+
 				ctx, cancel := context.WithTimeout(n.ctx, 5*time.Second)
 				s, err := n.Host.NewStream(ctx, target, ZypoProtocolID)
 				cancel()
-				if err != nil { continue }
+				if err != nil {
+					continue
+				}
 
 				log.Printf("[Mesh] Sending registration for %s to peer %s", domain, target)
-				
+
 				body, _ := json.Marshal(map[string]string{"domain": domain, "peer_id": n.Host.ID().String()})
 				req := ZypoRequest{
-					Action:   "domain_request", 
+					Action:   "domain_request",
 					Resource: domain,
 					Method:   "POST",
 					Size:     int64(len(body)),
@@ -742,11 +765,14 @@ func (n *ZypoNode) AnnounceDomainToCC(domain string) {
 				}
 			}
 
-			if success { return }
-			
+			if success {
+				return
+			}
+
 			log.Printf("[Mesh] No CC found to announce %s, retrying in 10s...", domain)
 			select {
-			case <-n.ctx.Done(): return
+			case <-n.ctx.Done():
+				return
 			case <-time.After(10 * time.Second):
 			}
 		}
@@ -792,7 +818,7 @@ func (n *ZypoNode) bootstrapLivenessLoop() {
 			n.bootstrapMu.Unlock()
 
 			for _, pid := range toCheck {
-				// We don't check connected status here, 
+				// We don't check connected status here,
 				// we just try to ping. PingPeer will try to connect if needed.
 				if !n.PingPeer(pid) {
 					log.Printf("Network: Bootstrap peer %s is unresponsive", pid)
@@ -808,8 +834,10 @@ func (n *ZypoNode) IsPeerHealthy(pid peer.ID) bool {
 	n.bootstrapMu.Lock()
 	defer n.bootstrapMu.Unlock()
 	lastSeen, exists := n.bootstrapHealth[pid]
-	if !exists { return false }
-	return time.Since(lastSeen) < 2 * time.Minute
+	if !exists {
+		return false
+	}
+	return time.Since(lastSeen) < 2*time.Minute
 }
 
 func (n *ZypoNode) getStream(ctx context.Context, target peer.ID) (network.Stream, error) {
@@ -818,7 +846,7 @@ func (n *ZypoNode) getStream(ctx context.Context, target peer.ID) (network.Strea
 		s := pool[len(pool)-1]
 		n.streamPool[target] = pool[:len(pool)-1]
 		n.streamPoolMu.Unlock()
-		
+
 		// Validate stream is still alive
 		// A simple way is to check the connection
 		if s.Conn().IsClosed() {
@@ -833,8 +861,10 @@ func (n *ZypoNode) getStream(ctx context.Context, target peer.ID) (network.Strea
 }
 
 func (n *ZypoNode) putStream(target peer.ID, s network.Stream) {
-	if s == nil { return }
-	
+	if s == nil {
+		return
+	}
+
 	// Don't pool closed or reset streams
 	if s.Conn().IsClosed() {
 		s.Reset()
@@ -843,11 +873,26 @@ func (n *ZypoNode) putStream(target peer.ID, s network.Stream) {
 
 	n.streamPoolMu.Lock()
 	defer n.streamPoolMu.Unlock()
-	
+
 	pool := n.streamPool[target]
 	if len(pool) < 10 { // Max 10 idle streams per peer
 		n.streamPool[target] = append(pool, s)
 	} else {
 		s.Close()
 	}
+}
+
+func (n *ZypoNode) Close() error {
+	log.Println("[Node] Initiating Graceful Shutdown...")
+	var err error
+	if n.DHT != nil {
+		err = n.DHT.Close()
+	}
+	if n.Host != nil {
+		if e := n.Host.Close(); e != nil {
+			err = e
+		}
+	}
+	log.Println("[Node] Shutdown complete")
+	return err
 }

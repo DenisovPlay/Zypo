@@ -47,7 +47,9 @@ func (n *ZypoNode) sendBroadcastsOnAllInterfaces() {
 	}
 
 	nodeType := "client"
-	if n.cfg.IsCommandCenter { nodeType = "cc" }
+	if n.cfg.IsCommandCenter {
+		nodeType = "cc"
+	}
 	payload := fmt.Sprintf("%s|%s|%d|%s", magicToken, n.Host.ID().String(), n.cfg.ListenPort, nodeType)
 
 	for _, iface := range ifaces {
@@ -75,7 +77,7 @@ func (n *ZypoNode) sendBroadcastsOnAllInterfaces() {
 			n.sendUDP(broadcastIP.String(), payload)
 		}
 	}
-	
+
 	// Also send to global broadcast for good measure
 	n.sendUDP("255.255.255.255", payload)
 }
@@ -129,12 +131,18 @@ func (n *ZypoNode) listenBroadcasts() {
 		if len(parts) >= 3 && parts[0] == magicToken {
 			peerIDStr, port := parts[1], parts[2]
 			nodeType := "client"
-			if len(parts) >= 4 { nodeType = parts[3] }
+			if len(parts) >= 4 {
+				nodeType = parts[3]
+			}
 
-			if peerIDStr == n.Host.ID().String() { continue }
+			if peerIDStr == n.Host.ID().String() {
+				continue
+			}
 
 			pid, err := peer.Decode(peerIDStr)
-			if err != nil { continue }
+			if err != nil {
+				continue
+			}
 
 			// Get IP from sender
 			ip := "127.0.0.1"
@@ -144,20 +152,27 @@ func (n *ZypoNode) listenBroadcasts() {
 
 			maddrStr := fmt.Sprintf("/ip4/%s/tcp/%s", ip, port)
 			maddr, err := multiaddr.NewMultiaddr(maddrStr)
-			if err != nil { continue }
+			if err != nil {
+				continue
+			}
 
 			n.Host.Peerstore().AddAddr(pid, maddr, time.Hour)
-			
+
 			ctx, cancel := context.WithTimeout(n.ctx, 5*time.Second)
 			err = n.Host.Connect(ctx, peer.AddrInfo{ID: pid, Addrs: []multiaddr.Multiaddr{maddr}})
 			cancel()
-			
+
 			if err == nil {
 				log.Printf("[LAN] Connected to %s %s at %s", nodeType, pid, maddrStr)
 				if nodeType == "cc" {
 					n.bootstrapMu.Lock()
 					found := false
-					for _, b := range n.BootstrapIDs { if b == pid { found = true; break } }
+					for _, b := range n.BootstrapIDs {
+						if b == pid {
+							found = true
+							break
+						}
+					}
 					if !found {
 						n.BootstrapIDs = append(n.BootstrapIDs, pid)
 						log.Printf("[LAN] Added discovered Command Center %s to bootstraps", pid)

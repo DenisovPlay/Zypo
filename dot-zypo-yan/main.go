@@ -18,7 +18,6 @@ import (
 
 	"github.com/dot-zypo/daemon/common/hosting"
 	"github.com/dot-zypo/daemon/common/node"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 type ZypoYanConfig struct {
@@ -85,7 +84,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to init Ya node: %v", err)
 	}
-	defer n.Host.Close()
+	defer n.Close()
 
 	// Start VPN if requested via flag OR config
 	if *enableVpn || cfg.EnableVpn {

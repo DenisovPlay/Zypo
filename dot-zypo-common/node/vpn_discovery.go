@@ -64,8 +64,10 @@ func (n *ZypoNode) DiscoverVPNNodes() ([]VPNAnnouncement, error) {
 
 	if err == nil {
 		for _, p := range providers {
-			if p.ID == n.Host.ID() { continue }
-			
+			if p.ID == n.Host.ID() {
+				continue
+			}
+
 			key := "/zypo/vpn/" + p.ID.String()
 			val, err := n.DHT.GetValue(ctx, key)
 			if err == nil {
@@ -87,20 +89,24 @@ func (n *ZypoNode) DiscoverVPNNodes() ([]VPNAnnouncement, error) {
 	// 2. Fallback: Check all directly connected peers.
 	// This is much faster for local/LAN environments.
 	for _, p := range n.Host.Network().Peers() {
-		if seen[p.String()] { continue }
-		
+		if seen[p.String()] {
+			continue
+		}
+
 		// Try to fetch VPN status directly via P2P if they are not in DHT yet
 		ctx2, cancel2 := context.WithTimeout(n.ctx, 2*time.Second)
 		s, err := n.Host.NewStream(ctx2, p, ZypoProtocolID)
 		cancel2()
-		if err != nil { continue }
-		
+		if err != nil {
+			continue
+		}
+
 		req := ZypoRequest{Action: "vpn_probe"}
 		reqBytes, _ := json.Marshal(req)
 		s.Write(append(reqBytes, '\n'))
-		
+
 		br := bufio.NewReader(s)
-		s.SetReadDeadline(time.Now().Add(2*time.Second))
+		s.SetReadDeadline(time.Now().Add(2 * time.Second))
 		hLine, err := br.ReadString('\n')
 		if err == nil {
 			var header ZypoHeader
@@ -127,7 +133,7 @@ func (n *ZypoNode) AnnounceVPNPresence() {
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
-		
+
 		for {
 			log.Printf("[VPN] Announcing VPN presence to mesh...")
 			ctx, cancel := context.WithTimeout(n.ctx, 15*time.Second)
@@ -144,7 +150,7 @@ func (n *ZypoNode) AnnounceVPNPresence() {
 				Bandwidth: n.cfg.VpnBandwidth,
 				Timestamp: time.Now().Unix(),
 			}
-			
+
 			// Command Center specific defaults (can still be overridden by config)
 			if n.cfg.IsCommandCenter {
 				if ann.Location == "Decentralized Node" || ann.Location == "" {
@@ -164,7 +170,7 @@ func (n *ZypoNode) AnnounceVPNPresence() {
 			if err := n.RegisterVPNNodeDHT(ann); err != nil {
 				log.Printf("[VPN] RegisterVPNNodeDHT failed: %v", err)
 			}
-			
+
 			select {
 			case <-ticker.C:
 			case <-n.ctx.Done():
@@ -173,4 +179,3 @@ func (n *ZypoNode) AnnounceVPNPresence() {
 		}
 	}()
 }
-

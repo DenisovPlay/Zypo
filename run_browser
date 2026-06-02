@@ -14,10 +14,4 @@ if [ ! -z "$1" ]; then
     echo "Custom bootstrap set: $1"
 fi
 
-# Check if nodemon is installed
-if ! command -v nodemon &> /dev/null; then
-    echo "Warning: nodemon not found. Installing globally via npm..."
-    npm install -g nodemon
-fi
-
-cd dot-zypo-browser && nodemon --watch . --ignore dist/ --ext js,html,css --exec "npm start"
+cd dot-zypo-browser && npx nodemon --signal SIGTERM --watch . --ignore dist/ --ext js,html,css --exec "npm start"

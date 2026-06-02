@@ -6,8 +6,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/url"
 	"os"
 	"strings"
@@ -15,7 +16,7 @@ import (
 
 	"github.com/dot-zypo/daemon/common/node"
 	"github.com/libp2p/go-libp2p/core/peer"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 	"golang.org/x/net/html"
 )
 
@@ -26,9 +27,10 @@ var (
 func initDB() {
 	var err error
 	os.MkdirAll("data", 0755)
-	db, err = sql.Open("sqlite3", "data/ya_search.db")
+	db, err = sql.Open("sqlite", "data/ya_search.db")
 	if err != nil {
-		log.Fatalf("Failed to open SQLite: %v", err)
+		slog.Error(fmt.Sprintf("Failed to open SQLite: %v", err))
+		os.Exit(1)
 	}
 
 	_, err = db.Exec(`
@@ -40,7 +42,8 @@ func initDB() {
 		)
 	`)
 	if err != nil {
-		log.Fatalf("Failed to create tables: %v", err)
+		slog.Error(fmt.Sprintf("Failed to create tables: %v", err))
+		os.Exit(1)
 	}
 
 	_, err = db.Exec(`
@@ -49,7 +52,8 @@ func initDB() {
 		)
 	`)
 	if err != nil {
-		log.Fatalf("Failed to create tables: %v", err)
+		slog.Error(fmt.Sprintf("Failed to create tables: %v", err))
+		os.Exit(1)
 	}
 }
 
@@ -94,7 +98,7 @@ func StartCrawler(n *node.ZypoNode) {
 	}
 
 	go func() {
-		log.Println("[Crawler] Spider routine started")
+		slog.Info("[Crawler] Spider routine started")
 		for {
 			u := dequeue()
 			if u == "" {
@@ -103,7 +107,7 @@ func StartCrawler(n *node.ZypoNode) {
 				continue
 			}
 
-			log.Printf("[Crawler] Crawling %s", u)
+			slog.Info(fmt.Sprintf("[Crawler] Crawling %s", u))
 			crawlURL(n, u)
 			time.Sleep(5 * time.Second) // Be polite
 		}
@@ -126,7 +130,7 @@ func crawlURL(n *node.ZypoNode, u string) {
 
 	pids, err := n.ResolveDomain(domain)
 	if err != nil || len(pids) == 0 {
-		log.Printf("[Crawler] Failed to resolve %s: %v", domain, err)
+		slog.Info(fmt.Sprintf("[Crawler] Failed to resolve %s: %v", domain, err))
 		return
 	}
 
@@ -143,7 +147,7 @@ func crawlURL(n *node.ZypoNode, u string) {
 	}
 
 	if !success {
-		log.Printf("[Crawler] Could not fetch %s from any peer", u)
+		slog.Info(fmt.Sprintf("[Crawler] Could not fetch %s from any peer", u))
 		return
 	}
 
@@ -169,11 +173,11 @@ func crawlURL(n *node.ZypoNode, u string) {
 			description=excluded.description,
 			last_crawled=excluded.last_crawled
 	`, u, title, desc, time.Now())
-	
+
 	if err != nil {
-		log.Printf("[Crawler] DB insert failed for %s: %v", u, err)
+		slog.Info(fmt.Sprintf("[Crawler] DB insert failed for %s: %v", u, err))
 	} else {
-		log.Printf("[Crawler] Successfully indexed %s", u)
+		slog.Info(fmt.Sprintf("[Crawler] Successfully indexed %s", u))
 	}
 }
 

@@ -53,16 +53,20 @@ class ZypoVPN {
     }
 
     async handleOffer(msg) {
-        this.pc = new RTCPeerConnection({ 
-            iceServers: [
-                { urls: 'stun:turn.ancial.ru:3478' },
-                {
-                    urls: ['turn:turn.ancial.ru:3478?transport=udp', 'turn:turn.ancial.ru:3478?transport=tcp'],
-                    username: 'ancialturn',
-                    credential: 'secretancialturnpasscode'
-                }
-            ] 
-        });
+        let iceServers = [
+            { urls: 'stun:turn.ancial.ru:3478' }
+        ];
+        
+        // If the backend provided specific TURN credentials, use them
+        if (this.config && this.config.turnUrls && this.config.turnUsername && this.config.turnCredential) {
+            iceServers.push({
+                urls: this.config.turnUrls,
+                username: this.config.turnUsername,
+                credential: this.config.turnCredential
+            });
+        }
+
+        this.pc = new RTCPeerConnection({ iceServers: iceServers });
         this.pc.ondatachannel = (e) => this.setupDataChannel(e.channel, msg.from);
         this.pc.onicecandidate = (e) => {
             if (e.candidate && this.sig.readyState === WebSocket.OPEN) {

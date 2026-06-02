@@ -27,7 +27,7 @@ func getCCRendezvousCid() cid.Cid {
 }
 
 // StartGlobalScanner handles dynamic Command Center discovery without hardcoded IPs.
-// It uses three strategies: 
+// It uses three strategies:
 // 1. LAN broadcast (via lan_scanner.go)
 // 2. Global DHT Rendezvous (using CC_RENDEZVOUS_CID)
 // 3. P2P Gossip (nodes share CC location with each other)
@@ -100,10 +100,14 @@ func (n *ZypoNode) connectToPublicBootstrappers() {
 	var wg sync.WaitGroup
 	for _, maddrStr := range publicIPFSBootstrappers {
 		maddr, err := multiaddr.NewMultiaddr(maddrStr)
-		if err != nil { continue }
+		if err != nil {
+			continue
+		}
 		info, err := peer.AddrInfoFromP2pAddr(maddr)
-		if err != nil { continue }
-		
+		if err != nil {
+			continue
+		}
+
 		wg.Add(1)
 		go func(pi peer.AddrInfo) {
 			defer wg.Done()
@@ -124,9 +128,11 @@ func (n *ZypoNode) findCCInDHT() {
 	if err != nil {
 		return
 	}
-	
+
 	for _, p := range providers {
-		if p.ID == n.Host.ID() { continue }
+		if p.ID == n.Host.ID() {
+			continue
+		}
 		log.Printf("[Global DHT] Discovered potential CC: %s", p.ID)
 		if n.connectToBootstrapInfo(&p) != nil {
 			log.Printf("[Global DHT] Successfully discovered and linked to Command Center.")
@@ -158,7 +164,7 @@ func (n *ZypoNode) askPeersForCC() {
 		go func(pid peer.ID) {
 			ctx, cancel := context.WithTimeout(n.ctx, 10*time.Second)
 			defer cancel()
-			
+
 			// We use the DHT to find providers known to our neighbors
 			providers, err := n.DHT.FindProviders(ctx, getCCRendezvousCid())
 			if err == nil {
@@ -181,11 +187,14 @@ func (n *ZypoNode) connectToBootstrapInfo(info *peer.AddrInfo) *peer.AddrInfo {
 	}
 
 	log.Printf("[Mesh] Connected to discovered Command Center: %s", info.ID)
-	
+
 	n.bootstrapMu.Lock()
 	exists := false
 	for _, id := range n.BootstrapIDs {
-		if id == info.ID { exists = true; break }
+		if id == info.ID {
+			exists = true
+			break
+		}
 	}
 	if !exists {
 		n.BootstrapIDs = append(n.BootstrapIDs, info.ID)

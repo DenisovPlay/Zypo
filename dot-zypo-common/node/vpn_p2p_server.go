@@ -16,7 +16,7 @@ import (
 func (n *ZypoNode) StartP2PVPNServer() {
 	n.Host.SetStreamHandler("/zypo/vpn/1.0.0", func(s network.Stream) {
 		log.Printf("[P2P VPN] Incoming connection from %s", s.Conn().RemotePeer())
-		
+
 		br := bufio.NewReader(s)
 		s.SetReadDeadline(time.Now().Add(10 * time.Second))
 		line, err := br.ReadString('\n')
@@ -33,10 +33,10 @@ func (n *ZypoNode) StartP2PVPNServer() {
 		}
 
 		targetAddr := strings.TrimSpace(parts[1])
-		
+
 		// TODO: Add ACL/Restriction check here
 		log.Printf("[P2P VPN] Dialing %s on behalf of %s", targetAddr, s.Conn().RemotePeer())
-		
+
 		nc, err := net.DialTimeout("tcp", targetAddr, 10*time.Second)
 		if err != nil {
 			log.Printf("[P2P VPN] Failed to dial %s: %v", targetAddr, err)

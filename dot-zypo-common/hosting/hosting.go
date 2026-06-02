@@ -52,7 +52,9 @@ func startProxyWatcher(sitesDir string, watcher *fsnotify.Watcher) {
 		for {
 			select {
 			case event, ok := <-watcher.Events:
-				if !ok { return }
+				if !ok {
+					return
+				}
 				if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Remove|fsnotify.Rename) != 0 {
 					if strings.HasSuffix(event.Name, "reverse_proxy.json") {
 						log.Printf("[Hosting] Reloading proxy config for %s due to file change", sitesDir)
@@ -63,7 +65,9 @@ func startProxyWatcher(sitesDir string, watcher *fsnotify.Watcher) {
 					}
 				}
 			case err, ok := <-watcher.Errors:
-				if !ok { return }
+				if !ok {
+					return
+				}
 				log.Printf("[Hosting] fsnotify error: %v", err)
 			}
 		}
@@ -88,7 +92,7 @@ func getProxyTarget(sitesDir, domain string) (string, bool) {
 		if _, exists = proxyCache[sitesDir]; !exists {
 			cache = loadProxyConfig(sitesDir)
 			proxyCache[sitesDir] = cache
-			
+
 			// Setup watcher while we have the lock, but don't block
 			if _, hasWatcher := proxyWatchers[sitesDir]; !hasWatcher {
 				watcher, err := fsnotify.NewWatcher()
@@ -119,20 +123,22 @@ type socketWrapper struct {
 	c io.Closer
 }
 
-func (s *socketWrapper) Read(p []byte) (int, error) { return s.r.Read(p) }
+func (s *socketWrapper) Read(p []byte) (int, error)  { return s.r.Read(p) }
 func (s *socketWrapper) Write(p []byte) (int, error) { return s.w.Write(p) }
-func (s *socketWrapper) Close() error { return s.c.Close() }
+func (s *socketWrapper) Close() error                { return s.c.Close() }
 
 // GetResourceData resolves a request to a local file, WASM app, or reverse proxy.
 func GetResourceData(n *node.ZypoNode, req *node.ZypoRequest, domain, path string, bodyReader io.Reader) (node.ZypoHeader, io.ReadCloser, error) {
 	cfg := n.GetConfig()
-	
+
 	// Ensure sites dir is used consistently and correctly resolved
 	sitesDir := cfg.SitesDir
-	if sitesDir == "" { sitesDir = "zypo_sites" }
-	
+	if sitesDir == "" {
+		sitesDir = "zypo_sites"
+	}
+
 	absSitesDir, _ := filepath.Abs(sitesDir)
-	
+
 	// Special case: internal API calls over P2P (for mesh-based finance)
 	if domain == "api.zypo" {
 		return node.ZypoHeader{Status: 404}, nil, fmt.Errorf("api handled by control logic")
@@ -162,7 +168,7 @@ func GetResourceData(n *node.ZypoNode, req *node.ZypoRequest, domain, path strin
 		if err != nil {
 			return node.ZypoHeader{}, nil, fmt.Errorf("wasm execution error: %v", err)
 		}
-		
+
 		respReader := bufio.NewReader(bytes.NewReader(respBytes))
 		resp, err := http.ReadResponse(respReader, httpReq)
 		if err != nil {
@@ -173,12 +179,12 @@ func GetResourceData(n *node.ZypoNode, req *node.ZypoRequest, domain, path strin
 		for k, v := range resp.Header {
 			respHeaders[k] = v
 		}
-		
+
 		mimeType := resp.Header.Get("Content-Type")
 		if mimeType == "" {
 			mimeType = "text/plain"
 		}
-		
+
 		var bodyBytes []byte
 		if resp.Body != nil {
 			bodyBytes, _ = io.ReadAll(resp.Body)
@@ -197,7 +203,7 @@ func GetResourceData(n *node.ZypoNode, req *node.ZypoRequest, domain, path strin
 		fullURL += path
 
 		log.Printf("P2P Reverse Proxy: %s -> %s", domain, fullURL)
-		
+
 		method := req.Method
 		if method == "" {
 			method = "GET"
@@ -215,12 +221,12 @@ func GetResourceData(n *node.ZypoNode, req *node.ZypoRequest, domain, path strin
 			if !strings.Contains(host, ":") {
 				host += ":80"
 			}
-			
+
 			conn, err := net.DialTimeout("tcp", host, 5*time.Second)
 			if err != nil {
 				return node.ZypoHeader{}, nil, fmt.Errorf("websocket dial error: %v", err)
 			}
-			
+
 			reqLine := fmt.Sprintf("%s %s HTTP/1.1\r\n", method, path)
 			conn.Write([]byte(reqLine))
 			if req.Headers != nil {
@@ -231,32 +237,32 @@ func GetResourceData(n *node.ZypoNode, req *node.ZypoRequest, domain, path strin
 				}
 			}
 			conn.Write([]byte("\r\n"))
-			
+
 			reader := bufio.NewReader(conn)
 			resp, err := http.ReadResponse(reader, nil)
 			if err != nil {
 				conn.Close()
 				return node.ZypoHeader{}, nil, fmt.Errorf("websocket handshake error: %v", err)
 			}
-			
+
 			respHeaders := make(map[string][]string)
 			for k, v := range resp.Header {
 				respHeaders[k] = v
 			}
-			
+
 			return node.ZypoHeader{Status: resp.StatusCode, Mime: "websocket", Size: 0, Headers: respHeaders}, &socketWrapper{
 				r: io.MultiReader(reader, conn),
 				w: conn,
 				c: conn,
 			}, nil
 		}
-		
+
 		client := &http.Client{Timeout: 15 * time.Second}
 		httpReq, err := http.NewRequest(method, fullURL, bodyReader)
 		if err != nil {
 			return node.ZypoHeader{}, nil, fmt.Errorf("failed to create request: %v", err)
 		}
-		
+
 		if req.Headers != nil {
 			for k, v := range req.Headers {
 				for _, val := range v {
@@ -264,12 +270,12 @@ func GetResourceData(n *node.ZypoNode, req *node.ZypoRequest, domain, path strin
 				}
 			}
 		}
-		
+
 		resp, err := client.Do(httpReq)
 		if err != nil {
 			return node.ZypoHeader{}, nil, fmt.Errorf("backend error: %v", err)
 		}
-		
+
 		mimeType := resp.Header.Get("Content-Type")
 		if mimeType == "" {
 			mimeType = "text/html"
@@ -286,7 +292,7 @@ func GetResourceData(n *node.ZypoNode, req *node.ZypoRequest, domain, path strin
 	// File System Hosting
 	fullPath := filepath.Join(domainDir, path)
 	log.Printf("Hosting: Request for domain=%s path=%s -> fullPath=%s", domain, path, fullPath)
-	
+
 	// If path points to a directory, try adding index.html
 	info, err := os.Stat(fullPath)
 	if err == nil && info.IsDir() {

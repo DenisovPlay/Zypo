@@ -103,8 +103,10 @@ func (em *EconomyManager) GetAccount(peerID string) *Account {
 
 func (em *EconomyManager) verifyTx(tx *Transaction) error {
 	fromID, err := peer.Decode(tx.From)
-	if err != nil { return err }
-	
+	if err != nil {
+		return err
+	}
+
 	// We need the public key to verify. In libp2p, ID contains the public key if it's small (like Ed25519)
 	pub, err := fromID.ExtractPublicKey()
 	if err != nil {
@@ -132,8 +134,12 @@ func (em *EconomyManager) ProcessTransaction(tx *Transaction) error {
 	defer em.mu.Unlock()
 
 	// Ensure accounts exist
-	if _, ok := em.accounts[tx.From]; !ok { em.accounts[tx.From] = &Account{Balance: 100} }
-	if _, ok := em.accounts[tx.To]; !ok { em.accounts[tx.To] = &Account{Balance: 100} }
+	if _, ok := em.accounts[tx.From]; !ok {
+		em.accounts[tx.From] = &Account{Balance: 100}
+	}
+	if _, ok := em.accounts[tx.To]; !ok {
+		em.accounts[tx.To] = &Account{Balance: 100}
+	}
 
 	fromAcc := em.accounts[tx.From]
 	toAcc := em.accounts[tx.To]
@@ -144,12 +150,14 @@ func (em *EconomyManager) ProcessTransaction(tx *Transaction) error {
 
 	// Check for replay (simplified: just check ID)
 	for _, h := range fromAcc.History {
-		if h.ID == tx.ID { return fmt.Errorf("tx already processed") }
+		if h.ID == tx.ID {
+			return fmt.Errorf("tx already processed")
+		}
 	}
 
 	fromAcc.Balance -= tx.Amount
 	toAcc.Balance += tx.Amount
-	
+
 	fromAcc.History = append(fromAcc.History, *tx)
 	if tx.From != tx.To {
 		toAcc.History = append(toAcc.History, *tx)
@@ -162,7 +170,7 @@ func (em *EconomyManager) ProcessTransaction(tx *Transaction) error {
 
 func (em *EconomyManager) CreateAndSendTransaction(to string, amount int64, comment string) (*Transaction, error) {
 	myID := em.node.Host.ID().String()
-	
+
 	em.mu.RLock()
 	acc := em.accounts[myID]
 	if acc == nil || acc.Balance < amount {
@@ -174,7 +182,9 @@ func (em *EconomyManager) CreateAndSendTransaction(to string, amount int64, comm
 	ts := time.Now().UnixNano() / int64(time.Millisecond)
 	msg := []byte(fmt.Sprintf("%s|%s|%d|%d", myID, to, amount, ts))
 	sig, err := em.node.PrivKey.Sign(msg)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 
 	tx := &Transaction{
 		ID:        fmt.Sprintf("tx-%d", ts),
@@ -198,13 +208,17 @@ func (em *EconomyManager) CreateAndSendTransaction(to string, amount int64, comm
 
 func (em *EconomyManager) sendTxToPeer(tx *Transaction) {
 	toID, err := peer.Decode(tx.To)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(em.node.ctx, 10*time.Second)
 	defer cancel()
 
 	s, err := em.node.Host.NewStream(ctx, toID, ZypoProtocolID)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	defer s.Close()
 
 	req := map[string]interface{}{
@@ -229,20 +243,28 @@ func (em *EconomyManager) SettleVPNTicket(ticketBytes []byte) error {
 		Signature []byte `json:"signature"`
 	}
 	var ticket PaymentTicket
-	if err := json.Unmarshal(ticketBytes, &ticket); err != nil { return err }
+	if err := json.Unmarshal(ticketBytes, &ticket); err != nil {
+		return err
+	}
 
 	consumerID, err := peer.Decode(ticket.Consumer)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 
 	pub, err := consumerID.ExtractPublicKey()
 	if err != nil {
 		pub = em.node.Host.Peerstore().PubKey(consumerID)
-		if pub == nil { return fmt.Errorf("public key not found") }
+		if pub == nil {
+			return fmt.Errorf("public key not found")
+		}
 	}
 
 	msg := []byte(fmt.Sprintf("%s|%d|%d", ticket.ChannelID, ticket.Amount, ticket.Nonce))
 	valid, err := pub.Verify(msg, ticket.Signature)
-	if err != nil || !valid { return fmt.Errorf("invalid ticket signature") }
+	if err != nil || !valid {
+		return fmt.Errorf("invalid ticket signature")
+	}
 
 	// Convert ticket into a transaction locally
 	tx := &Transaction{
