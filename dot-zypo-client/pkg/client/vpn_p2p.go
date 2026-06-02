@@ -141,7 +141,7 @@ func (c *P2PVPNClient) Dial(network, addr string) (net.Conn, error) {
 
 	// Read response
 	reader := bufio.NewReader(s)
-	s.SetReadDeadline(time.Now().Add(5 * time.Second))
+	s.SetReadDeadline(time.Now().Add(15 * time.Second))
 	respLine, err := reader.ReadString('\n')
 	if err != nil {
 		log.Printf("[VPN] Handshake read error from %s: %v", c.providerID, err)

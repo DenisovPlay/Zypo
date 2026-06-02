@@ -138,9 +138,9 @@ func NewNode(ctx context.Context, cfg Config) (*ZypoNode, error) {
 
 	listenAddrs := []string{
 		fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", cfg.ListenPort),
-		"/ip4/0.0.0.0/udp/0/quic-v1",
+		fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic-v1", cfg.ListenPort),
 		fmt.Sprintf("/ip6/::/tcp/%d", cfg.ListenPort),
-		"/ip6/::/udp/0/quic-v1",
+		fmt.Sprintf("/ip6/::/udp/%d/quic-v1", cfg.ListenPort),
 	}
 
 	var h host.Host
