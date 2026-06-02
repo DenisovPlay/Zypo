@@ -1,9 +1,11 @@
 package node
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -58,11 +60,11 @@ func (em *EconomyManager) load() {
 	if err == nil {
 		json.Unmarshal(b, &em.accounts)
 		for _, acc := range em.accounts {
-			if acc.Rating == 0 {
-				acc.Rating = 5.0
-			}
 			if acc.SeenTxs == nil {
 				acc.SeenTxs = make(map[string]bool)
+			}
+			if acc.Rating == 0 {
+				acc.Rating = 5.0 // Default decentralized reputation
 			}
 			// Rebuild seen txs from history if needed
 			for _, tx := range acc.History {
@@ -111,6 +113,92 @@ func (em *EconomyManager) saveLocked() {
 		tmpPath := filepath.Join(em.dataDir, "prepaid.json.tmp")
 		os.WriteFile(tmpPath, b2, 0644)
 		os.Rename(tmpPath, filepath.Join(em.dataDir, "prepaid.json"))
+	}
+}
+
+// DumpState exports the entire account ledger (Oracle only)
+func (em *EconomyManager) DumpState() []byte {
+	em.mu.RLock()
+	defer em.mu.RUnlock()
+	b, _ := json.Marshal(em.accounts)
+	return b
+}
+
+// MergeState imports the ledger from Oracle
+func (em *EconomyManager) MergeState(data []byte) error {
+	em.mu.Lock()
+	defer em.mu.Unlock()
+	
+	var oracleAccounts map[string]*Account
+	if err := json.Unmarshal(data, &oracleAccounts); err != nil {
+		return err
+	}
+	
+	for pid, oAcc := range oracleAccounts {
+		if _, ok := em.accounts[pid]; !ok {
+			em.accounts[pid] = &Account{SeenTxs: make(map[string]bool)}
+		}
+		acc := em.accounts[pid]
+		acc.Balance = oAcc.Balance
+		acc.Rating = oAcc.Rating
+		
+		// Merge history and seen txs safely
+		for _, tx := range oAcc.History {
+			if !acc.SeenTxs[tx.ID] {
+				acc.SeenTxs[tx.ID] = true
+				acc.History = append(acc.History, tx)
+			}
+		}
+	}
+	
+	em.saveLocked()
+	log.Printf("[Economy] Synced ledger from Oracle (%d accounts updated)", len(oracleAccounts))
+	return nil
+}
+
+// SyncWithOracle connects to Oracle and updates ledger
+func (em *EconomyManager) SyncWithOracle() {
+	if em.node.cfg.IsCommandCenter {
+		return // Oracle doesn't sync with itself
+	}
+	if em.node.validator == nil || em.node.validator.OraclePeerID == "" {
+		return
+	}
+	
+	oracleID, err := peer.Decode(em.node.validator.OraclePeerID)
+	if err != nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	s, err := em.node.Host.NewStream(ctx, oracleID, ZypoProtocolID)
+	if err != nil {
+		log.Printf("[Economy] Failed to connect to Oracle for sync: %v", err)
+		return
+	}
+	defer s.Close()
+
+	req := map[string]interface{}{"action": "economy_dump"}
+	reqBytes, _ := json.Marshal(req)
+	s.Write(append(reqBytes, '\n'))
+
+	reader := bufio.NewReader(s)
+	hLine, err := reader.ReadString('\n')
+	if err != nil {
+		return
+	}
+
+	var header ZypoHeader
+	if err := json.Unmarshal([]byte(hLine), &header); err != nil {
+		return
+	}
+
+	if header.Status == 200 {
+		data := make([]byte, header.Size)
+		io.ReadFull(reader, data)
+		em.MergeState(data)
 	}
 }
 
@@ -163,10 +251,10 @@ func (em *EconomyManager) ProcessTransaction(tx *Transaction) error {
 	defer em.mu.Unlock()
 
 	if _, ok := em.accounts[tx.From]; !ok {
-		em.accounts[tx.From] = &Account{Balance: 0, SeenTxs: make(map[string]bool)}
+		em.accounts[tx.From] = &Account{Balance: 0, Rating: 5.0, SeenTxs: make(map[string]bool)}
 	}
 	if _, ok := em.accounts[tx.To]; !ok {
-		em.accounts[tx.To] = &Account{Balance: 0, SeenTxs: make(map[string]bool)}
+		em.accounts[tx.To] = &Account{Balance: 0, Rating: 5.0, SeenTxs: make(map[string]bool)}
 	}
 
 	fromAcc := em.accounts[tx.From]
@@ -185,8 +273,20 @@ func (em *EconomyManager) ProcessTransaction(tx *Transaction) error {
 		isOracle = true
 	}
 
-	if fromAcc.Balance < tx.Amount && !isOracle {
-		return fmt.Errorf("insufficient funds")
+	creditLimit := fromAcc.Rating * 2.0 // Credit line based on decentralized reputation
+	if fromAcc.Balance+creditLimit < tx.Amount && !isOracle {
+		// Sync with Oracle and try once more before failing
+		if em.node.validator != nil && em.node.validator.OraclePeerID != "" && !em.node.cfg.IsCommandCenter {
+			em.mu.Unlock()
+			em.SyncWithOracle()
+			em.mu.Lock()
+			fromAcc = em.accounts[tx.From] // Re-fetch after sync
+			if fromAcc == nil || fromAcc.Balance+(fromAcc.Rating*2.0) < tx.Amount {
+				return fmt.Errorf("insufficient funds and exhausted credit limit")
+			}
+		} else {
+			return fmt.Errorf("insufficient funds and exhausted credit limit")
+		}
 	}
 
 	// Replay protection O(1)
@@ -265,8 +365,44 @@ func (em *EconomyManager) CreateAndSendTransaction(to string, amount float64, co
 		return nil, err
 	}
 
-	go em.sendTxToPeer(tx)
+	if err := em.sendTxToPeer(tx); err != nil {
+		em.rollbackTransaction(tx)
+		return nil, fmt.Errorf("failed to deliver transaction, rolled back locally: %v", err)
+	}
 	return tx, nil
+}
+
+func (em *EconomyManager) rollbackTransaction(tx *Transaction) {
+	em.mu.Lock()
+	defer em.mu.Unlock()
+
+	fromAcc := em.accounts[tx.From]
+	toAcc := em.accounts[tx.To]
+
+	if fromAcc != nil {
+		fromAcc.Balance += tx.Amount
+		delete(fromAcc.SeenTxs, tx.ID)
+		for i, h := range fromAcc.History {
+			if h.ID == tx.ID {
+				fromAcc.History = append(fromAcc.History[:i], fromAcc.History[i+1:]...)
+				break
+			}
+		}
+	}
+
+	if toAcc != nil && tx.From != tx.To {
+		toAcc.Balance -= tx.Amount
+		delete(toAcc.SeenTxs, tx.ID)
+		for i, h := range toAcc.History {
+			if h.ID == tx.ID {
+				toAcc.History = append(toAcc.History[:i], toAcc.History[i+1:]...)
+				break
+			}
+		}
+	}
+
+	em.saveLocked()
+	log.Printf("💰 Economy: Rolled back TX %s", tx.ID)
 }
 
 // ProcessFaucet dispenses 10 ZPCN to the given peer once per 24 hours
@@ -279,18 +415,15 @@ func (em *EconomyManager) ProcessFaucet(peerID string) error {
 	}
 	em.mu.Unlock()
 
-	// Use history to check last faucet. A dedicated field would be better, but we can just scan history or use a simple in-memory map for the Faucet since CC runs constantly.
-	// Actually, let's just add an in-memory map for the Faucet limits to keep it simple, or store it in prepaidTraffic? No, just an in-memory map on CC.
-	// We will implement Faucet tracking in hosting.go to keep economy.go clean.
-	
+	// Faucet limits are handled externally (e.g., in hosting.go) to keep economy tracking clean.
 	_, err := em.CreateAndSendTransaction(peerID, 10.0, "Faucet ZPCN Dispense")
 	return err
 }
 
-func (em *EconomyManager) sendTxToPeer(tx *Transaction) {
+func (em *EconomyManager) sendTxToPeer(tx *Transaction) error {
 	toID, err := peer.Decode(tx.To)
 	if err != nil {
-		return
+		return err
 	}
 
 	ctx, cancel := context.WithTimeout(em.node.ctx, 10*time.Second)
@@ -298,9 +431,8 @@ func (em *EconomyManager) sendTxToPeer(tx *Transaction) {
 
 	s, err := em.node.Host.NewStream(ctx, toID, ZypoProtocolID)
 	if err != nil {
-		return
+		return err
 	}
-	defer s.Close()
 
 	req := map[string]interface{}{
 		"action": "economy_tx",
@@ -310,6 +442,27 @@ func (em *EconomyManager) sendTxToPeer(tx *Transaction) {
 
 	txBytes, _ := json.Marshal(tx)
 	s.Write(append(txBytes, '\n'))
+	
+	// Close write end to signal EOF to the server
+	s.CloseWrite()
+
+	// Wait for response to ensure the provider processed the prepayment
+	reader := bufio.NewReader(s)
+	s.SetReadDeadline(time.Now().Add(5 * time.Second))
+	respLine, err := reader.ReadString('\n')
+	s.Close()
+	
+	if err != nil {
+		return fmt.Errorf("failed to read economy_tx response: %v", err)
+	}
+	var resp ZypoHeader
+	if err := json.Unmarshal([]byte(respLine), &resp); err != nil {
+		return fmt.Errorf("invalid economy_tx response")
+	}
+	if resp.Status != 200 {
+		return fmt.Errorf("provider rejected transaction")
+	}
+	return nil
 }
 
 // VPN Accounting Support
