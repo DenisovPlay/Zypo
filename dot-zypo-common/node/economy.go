@@ -275,18 +275,7 @@ func (em *EconomyManager) ProcessTransaction(tx *Transaction) error {
 
 	creditLimit := fromAcc.Rating * 2.0 // Credit line based on decentralized reputation
 	if fromAcc.Balance+creditLimit < tx.Amount && !isOracle {
-		// Sync with Oracle and try once more before failing
-		if em.node.validator != nil && em.node.validator.OraclePeerID != "" && !em.node.cfg.IsCommandCenter {
-			em.mu.Unlock()
-			em.SyncWithOracle()
-			em.mu.Lock()
-			fromAcc = em.accounts[tx.From] // Re-fetch after sync
-			if fromAcc == nil || fromAcc.Balance+(fromAcc.Rating*2.0) < tx.Amount {
-				return fmt.Errorf("insufficient funds and exhausted credit limit")
-			}
-		} else {
-			return fmt.Errorf("insufficient funds and exhausted credit limit")
-		}
+		return fmt.Errorf("insufficient funds and exhausted decentralized credit limit")
 	}
 
 	// Replay protection O(1)
@@ -365,9 +354,14 @@ func (em *EconomyManager) CreateAndSendTransaction(to string, amount float64, co
 		return nil, err
 	}
 
+	// Gossip to the network
+	em.BroadcastTransaction(tx)
+	
+	// Also specifically ensure it reaches the recipient synchronously
 	if err := em.sendTxToPeer(tx); err != nil {
-		em.rollbackTransaction(tx)
-		return nil, fmt.Errorf("failed to deliver transaction, rolled back locally: %v", err)
+		// We no longer rollback locally on failure to send to peer, 
+		// because the network will eventually sync via gossip
+		log.Printf("💰 Economy: Failed to deliver to peer directly, relying on gossip: %v", err)
 	}
 	return tx, nil
 }
@@ -465,6 +459,36 @@ func (em *EconomyManager) sendTxToPeer(tx *Transaction) error {
 	return nil
 }
 
+// BroadcastTransaction gossips the transaction to all connected peers
+func (em *EconomyManager) BroadcastTransaction(tx *Transaction) {
+	req := map[string]interface{}{
+		"action": "economy_tx",
+	}
+	reqBytes, _ := json.Marshal(req)
+	txBytes, _ := json.Marshal(tx)
+
+	for _, p := range em.node.Host.Network().Peers() {
+		// Don't echo back to the sender
+		if p.String() == tx.From {
+			continue
+		}
+		
+		go func(peerID peer.ID) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			
+			s, err := em.node.Host.NewStream(ctx, peerID, ZypoProtocolID)
+			if err != nil {
+				return
+			}
+			s.Write(append(reqBytes, '\n'))
+			s.Write(append(txBytes, '\n'))
+			s.CloseWrite()
+			s.Close()
+		}(p)
+	}
+}
+
 // VPN Accounting Support
 func (em *EconomyManager) AddPrepaidTraffic(peerID string, bytes int64) {
 	em.mu.Lock()
@@ -477,6 +501,22 @@ func (em *EconomyManager) GetPrepaidTraffic(peerID string) int64 {
 	em.mu.RLock()
 	defer em.mu.RUnlock()
 	return em.prepaidTraffic[peerID]
+}
+
+func (em *EconomyManager) HasSeenTransaction(tx *Transaction) bool {
+	em.mu.RLock()
+	defer em.mu.RUnlock()
+	if acc, ok := em.accounts[tx.From]; ok {
+		if acc.SeenTxs[tx.ID] {
+			return true
+		}
+	}
+	if acc, ok := em.accounts[tx.To]; ok {
+		if acc.SeenTxs[tx.ID] {
+			return true
+		}
+	}
+	return false
 }
 
 func (em *EconomyManager) ConsumePrepaidTraffic(peerID string, bytes int64) bool {

@@ -1,11 +1,12 @@
 package client
 
 import (
+	"bufio"
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/dot-zypo/daemon/common/node"
@@ -35,6 +36,14 @@ func (c *P2PVPNClient) ConnectToProvider(providerID string) error {
 	c.providerID = providerID
 	log.Printf("[VPN] Target provider set to %s", providerID)
 
+	// Test connection to provider first before prepaying
+	ctx, cancel := context.WithTimeout(c.node.GetContext(), 10*time.Second)
+	defer cancel()
+	if err := c.node.Host.Connect(ctx, peer.AddrInfo{ID: pid}); err != nil {
+		c.providerID = ""
+		return fmt.Errorf("failed to connect to provider: %v", err)
+	}
+
 	if c.node.EconomyManager != nil {
 		price := c.node.GetConfig().VpnPrice
 		if price <= 0 {
@@ -43,11 +52,20 @@ func (c *P2PVPNClient) ConnectToProvider(providerID string) error {
 		// Prepay 1 ZPCN (which equals 1/price GB)
 		_, err := c.node.EconomyManager.CreateAndSendTransaction(providerID, 1.0, "VPN Prepay")
 		if err != nil {
-			log.Printf("[VPN] Warning: Failed to prepay VPN provider: %v (You might not have enough balance or the provider might reject connections)", err)
-		} else {
-			log.Printf("[VPN] Prepaid 1.0 ZPCN to VPN provider %s", providerID)
+			log.Printf("[VPN] Warning: Failed to prepay VPN provider: %v", err)
+			c.providerID = ""
+			return fmt.Errorf("prepayment failed: %v", err)
 		}
+		log.Printf("[VPN] Prepaid 1.0 ZPCN to VPN provider %s", providerID)
 	}
+
+	// Try to open a stream to verify the VPN protocol is supported and reachable
+	s, err := c.node.Host.NewStream(ctx, pid, "/zypo/vpn/1.0.0")
+	if err != nil {
+		c.providerID = ""
+		return fmt.Errorf("failed to verify VPN stream with provider: %v", err)
+	}
+	s.Reset() // Force close the stream immediately since it was just a test
 
 	// Automatically activate TUN routing if available
 	if GlobalTUN != nil {
@@ -122,18 +140,19 @@ func (c *P2PVPNClient) Dial(network, addr string) (net.Conn, error) {
 	}
 
 	// Read response
-	buf := make([]byte, 3)
-	_, err = io.ReadFull(s, buf)
+	reader := bufio.NewReader(s)
+	s.SetReadDeadline(time.Now().Add(5 * time.Second))
+	respLine, err := reader.ReadString('\n')
 	if err != nil {
 		log.Printf("[VPN] Handshake read error from %s: %v", c.providerID, err)
 		s.Close()
 		return nil, err
 	}
 
-	if string(buf) != "OK\n" {
-		log.Printf("[VPN] Provider %s rejected connection to %s", c.providerID, addr)
+	if respLine != "OK\n" {
+		log.Printf("[VPN] Provider %s rejected connection to %s: %s", c.providerID, addr, strings.TrimSpace(respLine))
 		s.Close()
-		return nil, fmt.Errorf("provider rejected connection")
+		return nil, fmt.Errorf("provider rejected connection: %s", strings.TrimSpace(respLine))
 	}
 
 	log.Printf("[VPN] Connection to %s ESTABLISHED via %s", addr, c.providerID)

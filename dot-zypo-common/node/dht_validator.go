@@ -10,6 +10,7 @@ import (
 
 type ZypoValidator struct {
 	OraclePubKey crypto.PubKey
+	OraclePeerID string
 }
 
 func (v *ZypoValidator) Validate(key string, value []byte) error {

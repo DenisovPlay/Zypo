@@ -654,13 +654,18 @@ func (n *ZypoNode) loadOraclePubKey() {
 		return
 	}
 	b, err := os.ReadFile(filepath.Join(n.cfg.DataDir, "oracle.pub"))
-	if err != nil {
-		return
-	}
-	pub, err := crypto.UnmarshalPublicKey(b)
 	if err == nil {
-		n.validator.OraclePubKey = pub
-		log.Printf("[DHT] Loaded Oracle public key from disk")
+		pub, err := crypto.UnmarshalPublicKey(b)
+		if err == nil {
+			n.validator.OraclePubKey = pub
+			log.Printf("[DHT] Loaded Oracle public key from disk")
+		}
+	}
+	
+	pidb, err := os.ReadFile(filepath.Join(n.cfg.DataDir, "oracle.id"))
+	if err == nil {
+		n.validator.OraclePeerID = string(pidb)
+		log.Printf("[DHT] Loaded Oracle Peer ID from disk: %s", string(pidb))
 	}
 }
 
@@ -672,7 +677,7 @@ func (n *ZypoNode) resolveOraclePubKey(pid peer.ID) {
 	if n.cfg.IsCommandCenter {
 		return // CC is its own oracle; key already set
 	}
-	if n.validator.OraclePubKey != nil {
+	if n.validator.OraclePubKey != nil && n.validator.OraclePeerID != "" {
 		return // already resolved
 	}
 	pub := n.Host.Peerstore().PubKey(pid)
@@ -681,6 +686,7 @@ func (n *ZypoNode) resolveOraclePubKey(pid peer.ID) {
 		return
 	}
 	n.validator.OraclePubKey = pub
+	n.validator.OraclePeerID = pid.String()
 	log.Printf("[DHT] Oracle public key resolved from peerstore for peer %s", pid)
 
 	// Persist for offline verification
@@ -688,6 +694,7 @@ func (n *ZypoNode) resolveOraclePubKey(pid peer.ID) {
 	if err == nil {
 		os.MkdirAll(n.cfg.DataDir, 0755)
 		os.WriteFile(filepath.Join(n.cfg.DataDir, "oracle.pub"), b, 0644)
+		os.WriteFile(filepath.Join(n.cfg.DataDir, "oracle.id"), []byte(pid.String()), 0644)
 	}
 }
 

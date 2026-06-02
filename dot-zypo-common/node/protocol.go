@@ -91,17 +91,25 @@ func (n *ZypoNode) handleZypoStream(s network.Stream) {
 		if n.cfg.EnableVpn {
 			ann := &VPNAnnouncement{
 				PeerID:    n.Host.ID().String(),
-				Location:  "Decentralized Node",
-				Flag:      "🌐",
-				Price:     0.5,
-				Bandwidth: 100,
+				Location:  n.cfg.VpnLocation,
+				Flag:      n.cfg.VpnFlag,
+				Price:     n.cfg.VpnPrice,
+				Bandwidth: n.cfg.VpnBandwidth,
 				Timestamp: time.Now().Unix(),
 			}
 			if n.cfg.IsCommandCenter {
-				ann.Location = "Zypo Command Center"
-				ann.Flag = "🏛️"
-				ann.Price = 0.1
-				ann.Bandwidth = 5000
+				if ann.Location == "Decentralized Node" || ann.Location == "" {
+					ann.Location = "Zypo Command Center"
+				}
+				if ann.Flag == "🌐" || ann.Flag == "" {
+					ann.Flag = "🏛️"
+				}
+				if ann.Price == 0.5 {
+					ann.Price = 0.1
+				}
+				if ann.Bandwidth == 100 {
+					ann.Bandwidth = 5000
+				}
 			}
 			data, _ := json.Marshal(ann)
 			bodyStream = io.NopCloser(bytes.NewReader(data))
@@ -114,8 +122,12 @@ func (n *ZypoNode) handleZypoStream(s network.Stream) {
 		txData, _ := io.ReadAll(bodyReader)
 		var tx Transaction
 		if err := json.Unmarshal(txData, &tx); err == nil {
+			isNew := !n.EconomyManager.HasSeenTransaction(&tx)
 			if err := n.EconomyManager.ProcessTransaction(&tx); err == nil {
 				header = ZypoHeader{Status: 200}
+				if isNew {
+					go n.EconomyManager.BroadcastTransaction(&tx)
+				}
 			} else {
 				log.Printf("[Economy] Tx rejected: %v", err)
 				header = ZypoHeader{Status: 400}
@@ -124,11 +136,15 @@ func (n *ZypoNode) handleZypoStream(s network.Stream) {
 			header = ZypoHeader{Status: 400}
 		}
 	} else if strings.HasPrefix(req.Action, "economy_") {
-		// Support local requests for dashboard
 		if req.Action == "economy_balance" {
 			balance := n.EconomyManager.GetBalance(s.Conn().RemotePeer().String())
-			bodyStream = io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`{"balance": %d}`, balance))))
+			bodyStream = io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`{"balance": %f}`, balance))))
 			header = ZypoHeader{Status: 200, Mime: "application/json"}
+		} else if req.Action == "economy_dump" && n.cfg.IsCommandCenter {
+			// Oracle command to dump the entire economy state
+			dump := n.EconomyManager.DumpState()
+			bodyStream = io.NopCloser(bytes.NewReader(dump))
+			header = ZypoHeader{Status: 200, Mime: "application/json", Size: int64(len(dump))}
 		} else {
 			header = ZypoHeader{Status: 403}
 		}

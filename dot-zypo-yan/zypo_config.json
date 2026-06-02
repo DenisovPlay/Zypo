@@ -15,6 +15,10 @@
   "sites_dir": "zypo_sites",
   "enable_mdns": false,
   "enable_vpn": true,
+  "vpn_location": "France",
+  "vpn_flag": "🇫🇷",
+  "vpn_price": 0.1,
+  "vpn_bandwidth": 1000,
   "bootstrap_nodes": [
     "/ip4/213.171.27.234/tcp/8900/p2p/12D3KooWPyuxuDGwsnBB6sKvCarjfRimWhNvvXaAhYnGkesBFbEf"
   ],

@@ -115,6 +115,24 @@
         .status-disconnected .power-btn:hover .power-icon { stroke: #fff; }
         .status-connected .power-icon { stroke: #fff; filter: drop-shadow(0 0 8px rgba(255,255,255,0.5)); }
 
+        .status-connecting .power-ring {
+            border-color: rgba(234, 179, 8, 0.3);
+            animation: spin 3s linear infinite;
+        }
+        .status-connecting .power-btn {
+            background: linear-gradient(145deg, #713f12, #422006);
+            box-shadow: 
+                0 0 40px rgba(234, 179, 8, 0.4),
+                inset 0 0 0 2px rgba(234, 179, 8, 0.5);
+            transform: scale(1.01);
+        }
+        .status-connecting .power-btn:hover {
+            box-shadow: 
+                0 0 50px rgba(234, 179, 8, 0.5),
+                inset 0 0 0 2px rgba(234, 179, 8, 0.7);
+        }
+        .status-connecting .power-icon { stroke: #fff; filter: drop-shadow(0 0 8px rgba(255,255,255,0.5)); }
+
         /* Background glow based on status */
         .bg-glow {
             position: fixed;
@@ -133,6 +151,7 @@
 
         .status-disconnected .bg-glow { background: #3b82f6; }
         .status-connected .bg-glow { background: #10b981; }
+        .status-connecting .bg-glow { background: #eab308; }
 
         /* Toggle Switch */
         .toggle-switch {
@@ -161,7 +180,11 @@
     </style>
 </head>
 <body class="selection:bg-emerald-500/30">
-    <div x-data="vpnApp()" x-init="init()" class="h-screen flex flex-col relative overflow-y-auto custom-scroll" x-cloak :class="vpnStatus.connection_state === 'connected' && vpnStatus.is_operational ? 'status-connected' : 'status-disconnected'">
+    <div x-data="vpnApp()" x-init="init()" class="h-screen flex flex-col relative overflow-y-auto custom-scroll" x-cloak :class="{
+        'status-connected': vpnStatus.connection_state === 'connected' && vpnStatus.is_operational,
+        'status-connecting': vpnStatus.connection_state === 'connecting',
+        'status-disconnected': vpnStatus.connection_state !== 'connected' && vpnStatus.connection_state !== 'connecting'
+    }">
         
         <div class="bg-glow"></div>
 
@@ -188,10 +211,23 @@
                 
                 <!-- Connection Status Text -->
                 <div class="text-center mb-8 h-16 w-full mt-auto">
-                    <template x-if="vpnStatus.connection_state !== 'connected'">
+                    <template x-if="vpnStatus.connection_state !== 'connected' && vpnStatus.connection_state !== 'connecting'">
                         <div>
                             <div class="hidden text-zinc-500 text-sm tracking-widest uppercase font-medium mb-1" x-text="t('browser.vpn_connect')"></div>
                             <div class="text-2xl font-light text-zinc-300" x-text="t('browser.vpn_status_disconnected')"></div>
+                            <div class="text-xs text-red-400 mt-2 h-4" x-text="errorMsg"></div>
+                        </div>
+                    </template>
+                    <template x-if="vpnStatus.connection_state === 'connecting'">
+                        <div class="animate-in slide-in-from-bottom-2 fade-in">
+                            <div class="text-yellow-500 text-sm tracking-widest uppercase font-bold mb-1 flex items-center justify-center gap-2">
+                                <span class="relative flex h-2 w-2">
+                                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+                                    <span class="relative inline-flex rounded-full h-2 w-2 bg-yellow-500"></span>
+                                </span>
+                                <span x-text="t('browser.vpn_status_connecting') || 'Connecting...'"></span>
+                            </div>
+                            <div class="text-2xl font-medium text-white" x-text="getSelectedNodeLocation()"></div>
                         </div>
                     </template>
                     <template x-if="vpnStatus.connection_state === 'connected' && vpnStatus.is_operational">
@@ -416,6 +452,7 @@
                 nodes: [],
                 selectedNode: null,
                 initialized: false,
+                errorMsg: '',
                 i18n: {},
                 vpnStatus: {
                     connection_state: 'disconnected',
@@ -567,7 +604,8 @@
                 },
 
                 async toggleConnection() {
-                    if (this.vpnStatus.connection_state === 'connected') {
+                    this.errorMsg = '';
+                    if (this.vpnStatus.connection_state === 'connected' || this.vpnStatus.connection_state === 'connecting') {
                         await this.disconnect();
                     } else {
                         if (!this.selectedNode && this.nodes.length > 0) this.selectedNode = this.nodes[0];
@@ -575,6 +613,7 @@
                             await this.connect(this.selectedNode);
                         } else {
                             if(this._ipc) this._ipc.sendToHost('zypo-alert', 'VPN', 'No nodes available', 'warning');
+                            this.errorMsg = 'No nodes available';
                         }
                     }
                 },
@@ -610,6 +649,7 @@
 
                 async connect(node) {
                     try {
+                        this.vpnStatus.connection_state = 'connecting';
                         const res = await Zypo.daemonFetch('/rpc/vpn/connect', { method: 'POST', body: { provider_id: node.peer_id } });
                         const data = await res.json();
                         if (!data.success) throw new Error(data.error || 'Connection rejected');
@@ -618,6 +658,8 @@
                         this.vpnStatus.is_operational = true;
                         this.vpnStatus.provider_id = node.peer_id;
                     } catch(e) { 
+                        this.vpnStatus.connection_state = 'disconnected';
+                        this.errorMsg = e.message;
                         if(this._ipc) this._ipc.sendToHost('zypo-alert', 'VPN Error', e.message, 'error');
                     }
                 },
