@@ -578,5 +578,6 @@ func (em *EconomyManager) SettleVPNTicket(ticketBytes []byte) error {
 		Signature: ticket.Signature, 
 	}
 
-	return em.ProcessTransaction(tx)
+	_, err = em.ProcessTransaction(tx)
+	return err
 }
