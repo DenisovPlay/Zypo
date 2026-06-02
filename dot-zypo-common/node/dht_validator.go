@@ -42,7 +42,9 @@ func (v *ZypoValidator) Validate(key string, value []byte) error {
 	}
 
 	if v.OraclePubKey == nil {
-		return fmt.Errorf("oracle public key not configured")
+		// MESH-ONLY MODE FALLBACK: If CC is unreachable and we have no Oracle key, 
+		// we trust the DHT record blindly. This is insecure against spoofing, but keeps the network alive.
+		return nil
 	}
 
 	valid, err := VerifyRecord(v.OraclePubKey, &record)

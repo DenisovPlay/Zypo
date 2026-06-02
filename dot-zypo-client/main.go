@@ -31,7 +31,6 @@ func main() {
 	listenPort := flag.Int("port", 0, "P2P listen port (0 for random)")
 	bootstrapAddr := flag.String("bootstrap", "", "Extra bootstrap node")
 	proxyPort := flag.Int("proxy", 8903, "Forward proxy port")
-	sigURLFlag := flag.String("vpn-sig", "", "VPN signaling server URL (defaults to bootstrap IP)")
 	flag.Parse()
 
 	cfg, err := node.LoadConfig(*configPath)
@@ -82,12 +81,9 @@ func main() {
 	var extraPeers []string
 	if *bootstrapAddr != "" {
 		extraPeers = append(extraPeers, *bootstrapAddr)
-	}
-
-	// Determine initial Signaling URL (fallback)
-	sigURL := *sigURLFlag
-	if sigURL == "" {
-		sigURL = "ws://213.171.27.234:8905/ws" // Default fallback to relay
+	} else if cfg.CommandCenterAddr != "" {
+		// Use CC addr as default fallback peer if none provided
+		extraPeers = append(extraPeers, cfg.CommandCenterAddr)
 	}
 
 	fmt.Fprintln(os.Stdout, "STARTING_MESH_STACK")
@@ -123,7 +119,8 @@ func main() {
 	}
 	tm, err := client.StartTUN(tunName, vpn, excludedIPs)
 	if err != nil {
-		log.Printf("[TUN] Failed to start (ignore if not root): %v", err)
+		log.Printf("[TUN] Failed to start: %v", err)
+		log.Printf("[TUN] Falling back to SOCKS5 only (Default on Windows/Non-Root).")
 	}
 
 	// Start SOCKS5 Server for non-root apps and better reliability

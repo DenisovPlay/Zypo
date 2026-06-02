@@ -14,31 +14,33 @@ Unlike traditional systems, Zypo has no "central bank".
 *   **Micropayments:** A State Channels system allows byte-by-byte payment for VPN traffic without overloading the network.
 
 ### 2. Bullet-Proof VPN & Proxy
-A full P2P tunnel over WebRTC with end-to-end encryption.
-*   **SOCKS5 & Forward Proxy:** Built-in local proxy servers (SOCKS5 on port `8910`, HTTP Proxy on `8903`) for reliable traffic routing without root privileges.
-*   **Optional TUN (Root):** With administrator privileges, you can launch a virtual network interface (e.g., `utun10` or `zypo-tun0`) to transparently intercept and route all OS TCP traffic through the built-in gVisor TCP/IP stack.
+A full P2P tunnel over libp2p with end-to-end encryption.
+*   **SOCKS5 & Forward Proxy (HTTPS):** Built-in local proxy servers (SOCKS5 on port `8910`, HTTP Proxy on `8903`) for reliable traffic routing. Full HTTPS (CONNECT) support is provided via a local TLS MITM, allowing encrypted `.zypo` websites to open in standard browsers (Chrome/Firefox).
+*   **Optional TUN (Linux/macOS):** With administrator privileges, you can launch a virtual network interface to transparently intercept and route all OS TCP traffic.
+*   **Windows Fallback:** If TUN drivers are unavailable (default behavior on Windows), the node gracefully and safely falls back to a SOCKS5-only mode.
 *   **DHT Discovery:** VPN providers are discovered via a distributed hash table (Kademlia), eliminating the need for central registries.
 
-### 3. Distributed DNS & Hosting
+### 3. Distributed DNS & Secure Hosting
 *   **Zypo DNS:** Naming system for zones like `.zypo`, `.mesh`, `.rus`, etc.
-*   **Oracle Verification:** All official domain records are signed by the Global Oracle. Nodes automatically fetch the oracle's public key upon first connecting to a bootstrap node and verify signatures for all DNS responses.
-*   **Hidden Services:** Host websites entirely within the network without a public IP.
+*   **Oracle Verification & Mesh-Fallback:** All official domain records are signed by the Global Oracle. If the Oracle goes offline, the network falls back to a decentralized "Mesh-Only" mode using the P2P DHT to keep domains resolvable.
+*   **Hidden Services (Secure Sandbox):** Host websites entirely within the network without a public IP. Strict path traversal protections ensure that the hosting directory is tightly sandboxed.
 
 ## 🛡️ Trust Model and Security
 
 ### How is the Global Registry (Oracle) authenticated?
-1.  **Trust-on-First-Connect (TOFC):** Upon the first successful connection to the official bootstrap node (specified in the config), the client extracts the Ed25519 public key from the Noise handshake.
+1.  **Trust-on-First-Connect (TOFC):** Upon the first successful connection to the official bootstrap node (specified in the config), the client extracts the Ed25519 public key.
 2.  **Oracle Persistence:** This key is saved in `data/oracle.pub`.
-3.  **Signature Validation:** Any DNS records in the DHT claiming official status must be signed by this key. If the signature is invalid, the record is ignored.
-4.  **Decentralization:** Even if the oracle node is compromised, attackers cannot steal user funds, as balances are stored and verified entirely in a decentralized manner.
+3.  **Signature Validation:** Any DNS records in the DHT claiming official status must be signed by this key.
+4.  **Decentralization:** Even if the oracle node is compromised or goes offline, the network continues to function, and balances are verified entirely in a decentralized manner.
 
 ## 📂 Project Structure
 
-*   `dot-zypo-common`: Protocol core, P2P engine, economy, and cryptography.
-*   `dot-zypo-client`: Client P2P node (local proxy, TUN, SOCKS5, wallet RPC server).
-*   `dot-zypo-server`: WebRTC signaling server and public Relay node.
+*   `dot-zypo-common`: Core. P2P engine, DHT, routing, DNS logic, and secure hosting.
+*   `dot-zypo-control`: Command Center (Coordinator Node). Acts as the DNS Oracle and public Relay hub.
+*   `dot-zypo-client`: Client P2P daemon. Starts the TUN interface, SOCKS5 proxy, and HTTPS Forward Proxy.
 *   `dot-zypo-browser`: User interface and Electron-based browser.
 *   `dot-zypo-yan`: Search engine and crawler for the hidden Mesh network.
+*   `dot-zypo-server`: (Deprecated) Former WebRTC signaling server. Scheduled for removal.
 
 ## 🛠️ Quick Start
 

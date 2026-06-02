@@ -22,7 +22,7 @@ func StartForwardProxy(n *node.ZypoNode, port int) {
 
 func handleForwardProxyRequest(n *node.ZypoNode, w http.ResponseWriter, r *http.Request) {
 	if r.Method == "CONNECT" {
-		http.Error(w, "HTTPS (CONNECT) is not supported over Zypo Proxy yet. Please use http://", http.StatusNotImplemented)
+		handleCONNECT(n, w, r)
 		return
 	}
 

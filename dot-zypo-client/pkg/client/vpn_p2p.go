@@ -35,6 +35,20 @@ func (c *P2PVPNClient) ConnectToProvider(providerID string) error {
 	c.providerID = providerID
 	log.Printf("[VPN] Target provider set to %s", providerID)
 
+	if c.node.EconomyManager != nil {
+		price := c.node.GetConfig().VpnPrice
+		if price <= 0 {
+			price = 0.5
+		}
+		// Prepay 1 ZPCN (which equals 1/price GB)
+		_, err := c.node.EconomyManager.CreateAndSendTransaction(providerID, 1.0, "VPN Prepay")
+		if err != nil {
+			log.Printf("[VPN] Warning: Failed to prepay VPN provider: %v (You might not have enough balance or the provider might reject connections)", err)
+		} else {
+			log.Printf("[VPN] Prepaid 1.0 ZPCN to VPN provider %s", providerID)
+		}
+	}
+
 	// Automatically activate TUN routing if available
 	if GlobalTUN != nil {
 		// Dynamically find and exclude provider's IPs to prevent routing loops

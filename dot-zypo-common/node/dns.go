@@ -62,7 +62,9 @@ func (n *ZypoNode) persistDNSOverrides() {
 	}
 	b, _ := json.MarshalIndent(stored, "", "  ")
 	os.MkdirAll(n.cfg.DataDir, 0755)
-	os.WriteFile(filepath.Join(n.cfg.DataDir, "dns_overrides.json"), b, 0644)
+	tmpPath := filepath.Join(n.cfg.DataDir, "dns_overrides.json.tmp")
+	os.WriteFile(tmpPath, b, 0644)
+	os.Rename(tmpPath, filepath.Join(n.cfg.DataDir, "dns_overrides.json"))
 }
 
 func (n *ZypoNode) RegisterDomainDHT(record *ZypoRecord) error {

@@ -25,6 +25,7 @@ var (
 	proxyMu       sync.RWMutex
 	proxyOnce     sync.Once
 	proxyWatchers map[string]*fsnotify.Watcher
+	faucetLimits  sync.Map
 )
 
 func initProxyCache() {
@@ -142,6 +143,32 @@ func GetResourceData(n *node.ZypoNode, req *node.ZypoRequest, domain, path strin
 	// Special case: internal API calls over P2P (for mesh-based finance)
 	if domain == "api.zypo" {
 		return node.ZypoHeader{Status: 404}, nil, fmt.Errorf("api handled by control logic")
+	}
+
+	// Zypo Faucet API (Command Center only)
+	if domain == "faucet.zypo" && path == "api/claim" {
+		if !cfg.IsCommandCenter {
+			return node.ZypoHeader{Status: 403, Mime: "application/json", Size: 22}, io.NopCloser(bytes.NewReader([]byte(`{"error":"Forbidden"}`))), nil
+		}
+		
+		peerID := req.RemotePeer
+		if peerID == "" {
+			return node.ZypoHeader{Status: 400, Mime: "application/json", Size: 23}, io.NopCloser(bytes.NewReader([]byte(`{"error":"No Peer ID"}`))), nil
+		}
+
+		lastTime, ok := faucetLimits.Load(peerID)
+		if ok && time.Since(lastTime.(time.Time)) < 24*time.Hour {
+			return node.ZypoHeader{Status: 429, Mime: "application/json", Size: 30}, io.NopCloser(bytes.NewReader([]byte(`{"error":"Rate limit exceed"}`))), nil
+		}
+
+		if err := n.EconomyManager.ProcessFaucet(peerID); err != nil {
+			msg := fmt.Sprintf(`{"error":"Faucet error: %v"}`, err)
+			return node.ZypoHeader{Status: 500, Mime: "application/json", Size: int64(len(msg))}, io.NopCloser(bytes.NewReader([]byte(msg))), nil
+		}
+
+		faucetLimits.Store(peerID, time.Now())
+		resp := `{"success":true,"message":"10 ZPCN sent to your wallet"}`
+		return node.ZypoHeader{Status: 200, Mime: "application/json", Size: int64(len(resp))}, io.NopCloser(bytes.NewReader([]byte(resp))), nil
 	}
 
 	domainDir := filepath.Join(absSitesDir, domain)
@@ -290,7 +317,13 @@ func GetResourceData(n *node.ZypoNode, req *node.ZypoRequest, domain, path strin
 	}
 
 	// File System Hosting
-	fullPath := filepath.Join(domainDir, path)
+	cleanPath := filepath.Clean("/" + path)
+	fullPath := filepath.Join(domainDir, cleanPath)
+	if !strings.HasPrefix(fullPath, domainDir) {
+		log.Printf("Hosting Error: Path traversal attempt blocked: %s", path)
+		return node.ZypoHeader{Status: 403, Mime: "text/plain", Size: 9}, io.NopCloser(bytes.NewReader([]byte("Forbidden"))), nil
+	}
+	
 	log.Printf("Hosting: Request for domain=%s path=%s -> fullPath=%s", domain, path, fullPath)
 
 	// If path points to a directory, try adding index.html

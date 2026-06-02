@@ -18,11 +18,12 @@ import (
 )
 
 type ZypoRequest struct {
-	Action   string              `json:"action"`
-	Resource string              `json:"resource"`
-	Method   string              `json:"method,omitempty"`
-	Size     int64               `json:"size,omitempty"`
-	Headers  map[string][]string `json:"headers,omitempty"`
+	Action     string              `json:"action"`
+	Resource   string              `json:"resource"`
+	Method     string              `json:"method,omitempty"`
+	Size       int64               `json:"size,omitempty"`
+	Headers    map[string][]string `json:"headers,omitempty"`
+	RemotePeer string              `json:"-"` // Added for internal use
 }
 
 type ZypoHeader struct {
@@ -51,6 +52,7 @@ func (n *ZypoNode) handleZypoStream(s network.Stream) {
 		log.Printf("[P2P] Protocol error (invalid request): %v", err)
 		return
 	}
+	req.RemotePeer = s.Conn().RemotePeer().String()
 
 	// 2. Prepare Body Reader
 	var bodyReader io.Reader = reader

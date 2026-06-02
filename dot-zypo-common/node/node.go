@@ -102,7 +102,9 @@ func (n *ZypoNode) savePeers(peers []peer.AddrInfo) {
 		return
 	}
 	b, _ := json.MarshalIndent(stored, "", "  ")
-	os.WriteFile(filepath.Join(n.cfg.DataDir, "known_peers.json"), b, 0644)
+	tmpPath := filepath.Join(n.cfg.DataDir, "known_peers.json.tmp")
+	os.WriteFile(tmpPath, b, 0644)
+	os.Rename(tmpPath, filepath.Join(n.cfg.DataDir, "known_peers.json"))
 }
 
 func (n *ZypoNode) loadKnownPeers() []string {
@@ -723,8 +725,12 @@ func (n *ZypoNode) AnnounceDomain(domain string) {
 // itself doesn't need DHT for self-resolution.
 func (n *ZypoNode) AnnounceDomainToCC(domain string) {
 	go func() {
-		for {
-			log.Printf("[Mesh] Attempting to announce domain %s to Command Center...", domain)
+		retries := 0
+		maxRetries := 5
+		delay := 5 * time.Second
+
+		for retries < maxRetries {
+			log.Printf("[Mesh] Attempting to announce domain %s to Command Center (Attempt %d/%d)...", domain, retries+1, maxRetries)
 
 			// Collect all candidate peers (bootstrap first, then any connected peer).
 			seen := make(map[peer.ID]bool)
@@ -791,13 +797,16 @@ func (n *ZypoNode) AnnounceDomainToCC(domain string) {
 				return
 			}
 
-			log.Printf("[Mesh] No CC found to announce %s, retrying in 10s...", domain)
+			log.Printf("[Mesh] No CC found to announce %s, retrying in %v...", domain, delay)
 			select {
 			case <-n.ctx.Done():
 				return
-			case <-time.After(10 * time.Second):
+			case <-time.After(delay):
 			}
+			retries++
+			delay *= 2 // Exponential backoff
 		}
+		log.Printf("[Mesh] Warn: Failed to announce %s to CC after %d attempts. Operating in Mesh-Only Mode.", domain, maxRetries)
 	}()
 }
 

@@ -2,7 +2,6 @@ package node
 
 import (
 	"bufio"
-	"io"
 	"log"
 	"net"
 	"strings"
@@ -15,7 +14,8 @@ import (
 // StartP2PVPNServer listens for incoming raw VPN streams over libp2p
 func (n *ZypoNode) StartP2PVPNServer() {
 	n.Host.SetStreamHandler("/zypo/vpn/1.0.0", func(s network.Stream) {
-		log.Printf("[P2P VPN] Incoming connection from %s", s.Conn().RemotePeer())
+		peerID := s.Conn().RemotePeer().String()
+		log.Printf("[P2P VPN] Incoming connection from %s", peerID)
 
 		br := bufio.NewReader(s)
 		s.SetReadDeadline(time.Now().Add(10 * time.Second))
@@ -35,31 +35,34 @@ func (n *ZypoNode) StartP2PVPNServer() {
 		targetAddr := strings.TrimSpace(parts[1])
 
 		// ACL/Restriction check
-		peerID := s.Conn().RemotePeer().String()
-		if n.EconomyManager != nil && n.EconomyManager.GetBalance(peerID) <= 0 {
-			log.Printf("[P2P VPN] Rejected %s: Insufficient balance", peerID)
-			s.Write([]byte("ERR: INSUFFICIENT_FUNDS\n"))
+		if n.EconomyManager != nil && n.EconomyManager.GetPrepaidTraffic(peerID) <= 0 {
+			log.Printf("[P2P VPN] Rejected %s: Out of prepaid traffic", peerID)
+			s.Write([]byte("ERR: OUT_OF_TRAFFIC\n"))
 			s.Close()
 			return
 		}
 
-		// SSRF Protection: Do not allow dialing local/private IPs
+		// Strong SSRF Protection
 		host, _, err := net.SplitHostPort(targetAddr)
 		if err != nil {
 			host = targetAddr
 		}
-		if ip := net.ParseIP(host); ip != nil {
-			if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() {
-				log.Printf("[P2P VPN] Rejected %s: SSRF attempt to %s", peerID, targetAddr)
+		
+		ips, err := net.LookupIP(host)
+		if err != nil {
+			log.Printf("[P2P VPN] Rejected %s: Failed to resolve host %s", peerID, host)
+			s.Write([]byte("ERR: RESOLVE_FAILED\n"))
+			s.Close()
+			return
+		}
+
+		for _, ip := range ips {
+			if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() || ip.IsLinkLocalMulticast() || ip.IsLinkLocalUnicast() {
+				log.Printf("[P2P VPN] Rejected %s: SSRF attempt to %s (%s)", peerID, targetAddr, ip.String())
 				s.Write([]byte("ERR: FORBIDDEN_TARGET\n"))
 				s.Close()
 				return
 			}
-		} else if host == "localhost" {
-			log.Printf("[P2P VPN] Rejected %s: SSRF attempt to localhost", peerID)
-			s.Write([]byte("ERR: FORBIDDEN_TARGET\n"))
-			s.Close()
-			return
 		}
 
 		log.Printf("[P2P VPN] Dialing %s on behalf of %s", targetAddr, peerID)
@@ -81,12 +84,49 @@ func (n *ZypoNode) StartP2PVPNServer() {
 
 		go func() {
 			defer wg.Done()
-			io.Copy(nc, br)
+			buf := make([]byte, 32*1024)
+			for {
+				nBytes, err := br.Read(buf)
+				if nBytes > 0 {
+					if n.EconomyManager != nil && !n.EconomyManager.ConsumePrepaidTraffic(peerID, int64(nBytes)) {
+						log.Printf("[P2P VPN] Disconnecting %s: out of prepaid traffic", peerID)
+						nc.Close()
+						s.Close()
+						return
+					}
+					_, werr := nc.Write(buf[:nBytes])
+					if werr != nil {
+						break
+					}
+				}
+				if err != nil {
+					break
+				}
+			}
 			nc.Close()
 		}()
+		
 		go func() {
 			defer wg.Done()
-			io.Copy(s, nc)
+			buf := make([]byte, 32*1024)
+			for {
+				nBytes, err := nc.Read(buf)
+				if nBytes > 0 {
+					if n.EconomyManager != nil && !n.EconomyManager.ConsumePrepaidTraffic(peerID, int64(nBytes)) {
+						log.Printf("[P2P VPN] Disconnecting %s: out of prepaid traffic", peerID)
+						s.Close()
+						nc.Close()
+						return
+					}
+					_, werr := s.Write(buf[:nBytes])
+					if werr != nil {
+						break
+					}
+				}
+				if err != nil {
+					break
+				}
+			}
 			s.Close()
 		}()
 

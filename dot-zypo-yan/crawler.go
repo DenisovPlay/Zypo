@@ -221,7 +221,8 @@ func fetchFromPeer(n *node.ZypoNode, target peer.ID, domain, path string) ([]byt
 		return nil, err
 	}
 
-	return io.ReadAll(reader)
+	// Limit to 10MB to prevent OOM
+	return io.ReadAll(io.LimitReader(reader, 10*1024*1024))
 }
 
 func extractMetadata(n *html.Node) (title string, desc string) {

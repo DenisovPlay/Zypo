@@ -330,9 +330,9 @@ func handleRpcAccountTransfer(n *node.ZypoNode, w http.ResponseWriter, r *http.R
 		return
 	}
 	var treq struct {
-		To      string `json:"to"`
-		Amount  int64  `json:"amount"`
-		Comment string `json:"comment"`
+		To      string  `json:"to"`
+		Amount  float64 `json:"amount"`
+		Comment string  `json:"comment"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&treq); err != nil {
 		http.Error(w, "Invalid body", 400)

@@ -110,6 +110,6 @@ func DefaultConfig() Config {
 		VpnFlag:           "🌐",
 		VpnPrice:          0.5,
 		VpnBandwidth:      100,
-		OfficialDomains:   []string{"gov.zypo", "domains.zypo", "docs.zypo", "api.zypo"},
+		OfficialDomains:   []string{"gov.zypo", "domains.zypo", "docs.zypo", "api.zypo", "faucet.zypo"},
 	}
 }

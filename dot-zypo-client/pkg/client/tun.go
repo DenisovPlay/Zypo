@@ -175,7 +175,13 @@ func (tm *TUNManager) detectGateway() {
 		out, err := exec.Command("sh", "-c", "netstat -nr | grep default | awk '{print $2}' | head -n 1").Output()
 		if err == nil {
 			tm.origGateway = strings.TrimSpace(string(out))
-			log.Printf("[TUN] Detected original gateway: %s", tm.origGateway)
+			log.Printf("[TUN] Detected original gateway (darwin): %s", tm.origGateway)
+		}
+	} else if runtime.GOOS == "linux" {
+		out, err := exec.Command("sh", "-c", "ip route show default | awk '/default/ {print $3}' | head -n 1").Output()
+		if err == nil {
+			tm.origGateway = strings.TrimSpace(string(out))
+			log.Printf("[TUN] Detected original gateway (linux): %s", tm.origGateway)
 		}
 	}
 }
