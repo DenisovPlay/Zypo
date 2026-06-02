@@ -151,6 +151,18 @@ func NewNode(ctx context.Context, cfg Config) (*ZypoNode, error) {
 		"pk":   record.PublicKeyValidator{},
 	}
 
+	// Parse bootstrap nodes for static relays
+	var staticRelays []peer.AddrInfo
+	for _, b := range cfg.BootstrapNodes {
+		ma, err := multiaddr.NewMultiaddr(b)
+		if err == nil {
+			pi, err := peer.AddrInfoFromP2pAddr(ma)
+			if err == nil {
+				staticRelays = append(staticRelays, *pi)
+			}
+		}
+	}
+
 	opts := []libp2p.Option{
 		libp2p.Identity(priv),
 		libp2p.ListenAddrStrings(listenAddrs...),
@@ -160,10 +172,16 @@ func NewNode(ctx context.Context, cfg Config) (*ZypoNode, error) {
 		libp2p.Transport(libp2pws.New),
 		libp2p.NATPortMap(),
 		libp2p.EnableHolePunching(),
-		libp2p.EnableRelay(),        // Can use relays
-		libp2p.EnableRelayService(), // CAN BE A RELAY (Bridge) if it has a public IP
+		libp2p.EnableNATService(),
+		libp2p.EnableRelay(),
+		libp2p.EnableRelayService(),
 		libp2p.Security(noise.ID, noise.New),
-		libp2p.EnableAutoRelayWithPeerSource(
+	}
+
+	if len(staticRelays) > 0 {
+		opts = append(opts, libp2p.EnableAutoRelayWithStaticRelays(staticRelays))
+	} else {
+		opts = append(opts, libp2p.EnableAutoRelayWithPeerSource(
 			func(ctx context.Context, numPeers int) <-chan peer.AddrInfo {
 				peerChan := make(chan peer.AddrInfo)
 				go func() {
@@ -201,7 +219,11 @@ func NewNode(ctx context.Context, cfg Config) (*ZypoNode, error) {
 				}()
 				return peerChan
 			},
-		),
+		))
+	}
+
+	if cfg.IsCommandCenter {
+		opts = append(opts, libp2p.ForceReachabilityPublic())
 	}
 
 	h, err = libp2p.New(opts...)

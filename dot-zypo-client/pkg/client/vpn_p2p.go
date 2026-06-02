@@ -86,6 +86,12 @@ func (c *P2PVPNClient) Dial(network, addr string) (net.Conn, error) {
 	ctx, cancel := context.WithTimeout(c.node.GetContext(), 15*time.Second)
 	defer cancel()
 
+	// Ensure we are connected and clear any dial backoffs from network switches
+	if len(c.node.Host.Network().ConnsToPeer(pid)) == 0 {
+		log.Printf("[VPN] Not connected to %s, attempting explicit connect to clear backoff...", pid)
+		_ = c.node.Host.Connect(ctx, peer.AddrInfo{ID: pid})
+	}
+
 	s, err := c.node.Host.NewStream(ctx, pid, "/zypo/vpn/1.0.0")
 	if err != nil {
 		log.Printf("[VPN] Stream error to %s: %v", c.providerID, err)

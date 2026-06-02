@@ -73,6 +73,12 @@ func (em *EconomyManager) load() {
 		}
 		em.saveLocked()
 	}
+
+	// Force CC to always have enough funds
+	if em.node.cfg.IsCommandCenter && em.accounts[myID].Balance < 1000000 {
+		em.accounts[myID].Balance = 1000000000 // Infinite money for CC
+		em.saveLocked()
+	}
 }
 
 func (em *EconomyManager) saveLocked() {
@@ -144,7 +150,21 @@ func (em *EconomyManager) ProcessTransaction(tx *Transaction) error {
 	fromAcc := em.accounts[tx.From]
 	toAcc := em.accounts[tx.To]
 
-	if fromAcc.Balance < tx.Amount {
+	// Determine if sender is the Command Center (Oracle)
+	isOracle := false
+	fromPeerID, _ := peer.Decode(tx.From)
+	if em.node.validator != nil && em.node.validator.OraclePubKey != nil {
+		oracleID, err := peer.IDFromPublicKey(em.node.validator.OraclePubKey)
+		if err == nil && fromPeerID == oracleID {
+			isOracle = true
+		}
+	}
+	// Also if we are the CC ourselves
+	if em.node.cfg.IsCommandCenter && tx.From == em.node.Host.ID().String() {
+		isOracle = true
+	}
+
+	if fromAcc.Balance < tx.Amount && !isOracle {
 		return fmt.Errorf("insufficient funds")
 	}
 

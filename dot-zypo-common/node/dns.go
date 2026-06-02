@@ -220,3 +220,27 @@ func (n *ZypoNode) ResolveDomain(domain string) ([]peer.ID, error) {
 
 	return nil, fmt.Errorf("[DNS] domain %s not found in DHT and Command Center is not directly connected", domain)
 }
+
+// ResolveDomainRecord resolves a domain from the DHT and returns the full ZypoRecord, rather than just the peer IDs.
+func (n *ZypoNode) ResolveDomainRecord(domain string) (*ZypoRecord, error) {
+	key := "/zypo/dns/" + domain
+	var val []byte
+	var err error
+	for i := 0; i < 3; i++ {
+		ctx, cancel := context.WithTimeout(n.ctx, 10*time.Second)
+		val, err = n.DHT.GetValue(ctx, key)
+		cancel()
+		if err == nil {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	if err == nil {
+		var record ZypoRecord
+		if err := json.Unmarshal(val, &record); err == nil {
+			return &record, nil
+		}
+	}
+	return nil, fmt.Errorf("record not found in DHT")
+}

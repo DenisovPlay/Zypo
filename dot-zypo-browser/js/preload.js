@@ -1,14 +1,14 @@
 // js/preload.js
-const { ipcRenderer } = require('electron');
 try {
-    const rpcPort = ipcRenderer.sendSync('get-rpc-port-sync');
-    const rpcToken = ipcRenderer.sendSync('get-rpc-token-sync');
-    const peerId = ipcRenderer.sendSync('get-last-peer-id-sync');
-    const language = ipcRenderer.sendSync('get-language-sync');
+    const ipc = require('electron').ipcRenderer;
+    const rpcPort = ipc.sendSync('get-rpc-port-sync');
+    const rpcToken = ipc.sendSync('get-rpc-token-sync');
+    const peerId = ipc.sendSync('get-last-peer-id-sync');
+    const language = ipc.sendSync('get-language-sync');
 
     const zypoPayApi = {
       requestPayment: (amount, to, comment) => {
-        return ipcRenderer.invoke('request-payment', { amount, to, comment });
+        return ipc.invoke('request-payment', { amount, to, comment });
       }
     };
 
@@ -16,7 +16,7 @@ try {
         rpcPort: rpcPort,
         rpcToken: rpcToken,
         language: language,
-        getPeerId: async () => { return ipcRenderer.sendSync('get-last-peer-id-sync'); },
+        getPeerId: async () => { return ipc.sendSync('get-last-peer-id-sync'); },
         // Simple property fallback since getters don't cross contextBridge well
         peerId: peerId
     };
@@ -30,7 +30,7 @@ try {
         window.zypoPay = zypoPayApi;
         window.zypo = { ...zypoApi };
         Object.defineProperty(window.zypo, 'peerId', {
-            get: () => ipcRenderer.sendSync('get-last-peer-id-sync')
+            get: () => ipc.sendSync('get-last-peer-id-sync')
         });
         window.ZYPO_RPC_PORT = rpcPort;
     }
@@ -41,5 +41,5 @@ try {
 }
 window.addEventListener('zypo-bridge', (e) => {
     const { channel, args } = e.detail;
-    ipcRenderer.sendToHost(channel, ...args);
+    require('electron').ipcRenderer.sendToHost(channel, ...args);
 });

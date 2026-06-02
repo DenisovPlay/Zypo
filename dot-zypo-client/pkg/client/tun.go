@@ -138,6 +138,9 @@ func (tm *TUNManager) Activate() error {
 		return fmt.Errorf("OS config failed: %v", err)
 	}
 
+	// Re-detect the gateway in case the network changed since daemon startup
+	tm.detectGateway()
+
 	// 2. Set routes
 	if err := tm.configureRouting(); err != nil {
 		return fmt.Errorf("routing failed: %v", err)

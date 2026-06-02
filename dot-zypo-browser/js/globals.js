@@ -45,7 +45,8 @@ const webviewsContainer = document.getElementById('views-container');
 const addressInput = document.getElementById('address-input');
 const btnBack = document.getElementById('btn-back');
 const btnForward = document.getElementById('btn-forward');
-const btnRefresh = document.getElementById('btn-refresh');
+const btnReload = document.getElementById('btn-refresh');
+const btnBookmark = document.getElementById('btn-bookmark');
 const btnNewTab = document.getElementById('btn-new-tab');
 const btnNetwork = document.getElementById('btn-network');
 const autocompleteDropdown = document.getElementById('autocomplete-dropdown');
@@ -81,4 +82,16 @@ function updateNavButtons() {
     btnBack.style.opacity = view.canGoBack() ? '1' : '0.5';
     btnForward.style.opacity = view.canGoForward() ? '1' : '0.5';
   } catch (e) {}
+}
+
+function getBookmarks() {
+    return JSON.parse(localStorage.getItem('zypo_bookmarks')) || [];
+}
+
+function saveBookmarks(bookmarks) {
+    localStorage.setItem('zypo_bookmarks', JSON.stringify(bookmarks));
+}
+
+function getSettings() {
+    return JSON.parse(localStorage.getItem('zypo_settings')) || { language: 'en', startupAction: 'newtab', homePage: 'zb://newtab', searchEngine: 'ya.rus', enableSearch: true };
 }

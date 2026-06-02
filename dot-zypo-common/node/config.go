@@ -40,7 +40,7 @@ type Config struct {
 }
 
 func LoadConfig(path string) (Config, error) {
-	var cfg Config
+	cfg := DefaultConfig() // Start with defaults to preserve fields missing in JSON
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return cfg, err
