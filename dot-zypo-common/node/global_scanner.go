@@ -1,7 +1,9 @@
 package node
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"log"
 	"sync"
 	"time"
@@ -158,20 +160,63 @@ func (n *ZypoNode) startGossipLoop() {
 	}
 }
 
+// askPeersForCC asks each connected peer individually for their known CC peers.
+// Unlike findCCInDHT (which queries our own DHT view), this directly gossips
+// with neighbors to discover CC addresses they know about.
 func (n *ZypoNode) askPeersForCC() {
 	peers := n.Host.Network().Peers()
 	for _, p := range peers {
 		go func(pid peer.ID) {
-			ctx, cancel := context.WithTimeout(n.ctx, 10*time.Second)
+			if n.hasHealthyCC() {
+				return // Found one already
+			}
+			ctx, cancel := context.WithTimeout(n.ctx, 8*time.Second)
 			defer cancel()
 
-			// We use the DHT to find providers known to our neighbors
-			providers, err := n.DHT.FindProviders(ctx, getCCRendezvousCid())
-			if err == nil {
-				for _, prov := range providers {
-					if prov.ID != n.Host.ID() {
-						n.connectToBootstrapInfo(&prov)
-					}
+			s, err := n.Host.NewStream(ctx, pid, ZypoProtocolID)
+			if err != nil {
+				return
+			}
+			defer s.Close()
+
+			// Send gossip request — ask peer for their CC bootstrap info
+			reqBytes, _ := json.Marshal(ZypoRequest{Action: "cc_gossip"})
+			s.SetWriteDeadline(time.Now().Add(3 * time.Second))
+			s.Write(append(reqBytes, '\n'))
+
+			// Read response header
+			reader := bufio.NewReader(s)
+			s.SetReadDeadline(time.Now().Add(5 * time.Second))
+			hLine, err := reader.ReadString('\n')
+			if err != nil {
+				return
+			}
+			var header ZypoHeader
+			if json.Unmarshal([]byte(hLine), &header) != nil || header.Status != 200 {
+				return
+			}
+			// Read body (list of CC multiaddrs)
+			bodyLine, err := reader.ReadString('\n')
+			if err != nil {
+				return
+			}
+			var ccAddrs []string
+			if json.Unmarshal([]byte(bodyLine), &ccAddrs) != nil {
+				return
+			}
+			for _, addr := range ccAddrs {
+				maddr, err := multiaddr.NewMultiaddr(addr)
+				if err != nil {
+					continue
+				}
+				info, err := peer.AddrInfoFromP2pAddr(maddr)
+				if err != nil || info.ID == n.Host.ID() {
+					continue
+				}
+				log.Printf("[Gossip] Peer %s told us about CC candidate %s", pid, info.ID)
+				if n.connectToBootstrapInfo(info) != nil {
+					log.Printf("[Gossip] Successfully connected to CC via peer %s", pid)
+					return
 				}
 			}
 		}(p)

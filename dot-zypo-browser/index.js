@@ -1,8 +1,10 @@
-const { app, BrowserWindow, protocol, ipcMain, dialog, session } = require('electron')
+const { app, BrowserWindow, protocol, ipcMain, dialog, session, Menu } = require('electron')
 const path = require('path')
 const { spawn } = require('child_process')
 const fs = require('fs')
 const crypto = require('crypto')
+
+app.setName('Zypo Browser')
 
 let mainWindow
 let daemonProcess
@@ -190,6 +192,7 @@ function createWindow() {
     height: 800,
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#000000',
+    icon: path.join(__dirname, 'build/icon.png'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -197,6 +200,70 @@ function createWindow() {
       preload: path.join(__dirname, 'js', 'preload_main.js')
     }
   })
+
+  // Set up application menu to remove "Electron" references
+  const isMac = process.platform === 'darwin'
+  const template = [
+    ...(isMac ? [{
+      label: 'Zypo Browser',
+      submenu: [
+        { role: 'about', label: 'About Zypo Browser' },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit', label: 'Quit Zypo Browser' }
+      ]
+    }] : []),
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { ...(isMac ? { role: 'pasteAndMatchStyle' } : {}) },
+        { role: 'delete' },
+        { role: 'selectAll' }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        ...(isMac ? [
+          { type: 'separator' },
+          { role: 'front' },
+          { type: 'separator' },
+          { role: 'window' }
+        ] : [
+          { role: 'close' }
+        ])
+      ]
+    }
+  ]
+  const menu = Menu.buildFromTemplate(template)
+  Menu.setApplicationMenu(menu)
 
   mainWindow.loadFile('index.html')
 }
@@ -266,25 +333,27 @@ ipcMain.on('clear-history', () => {
 })
 
 // Payment SDK
-ipcMain.handle('request-payment', async (e, req) => {
+ipcMain.handle('request-payment', async (e, req) => { console.log("REQUEST PAYMENT RECEIVED:", req);
   if (!RPC_PORT || RPC_PORT === 0) return { success: false, error: "Local daemon not ready" };
   const { amount, to, comment } = req;
   
-  const { response } = await dialog.showMessageBox(mainWindow, {
-    type: 'question',
-    buttons: ['Cancel', 'Approve Payment'],
-    defaultId: 1,
-    cancelId: 0,
-    title: 'Zypo Payment Request',
-    message: `A website is requesting a payment of ${amount} ZPCN.`,
-    detail: `To: ${to}\nComment: ${comment}\n\nDo you want to approve this transaction?`
+  const response = await new Promise(resolve => {
+    ipcMain.once('modal-response-payment', (_, res) => resolve(res));
+    mainWindow.webContents.send('show-modal', {
+      type: 'payment',
+      title: 'Zypo Payment Request',
+      message: `A website is requesting a payment of ${amount} ZPCN.`,
+      amount: amount,
+      to: to,
+      comment: comment
+    });
   });
 
   if (response !== 1) return { success: false, error: "User cancelled payment" };
 
   try {
     // 1. Get our own PeerID
-    const balRes = await fetch(`http://127.0.0.1:${RPC_PORT}/rpc?url=${encodeURIComponent('zypo://api.zypo/api/balance')}`, {
+    const balRes = await fetch(`http://127.0.0.1:${RPC_PORT}/rpc/status`, {
       headers: { 'Authorization': RPC_TOKEN }
     });
     const balData = await balRes.json();
@@ -298,11 +367,16 @@ ipcMain.handle('request-payment', async (e, req) => {
       comment: comment || ''
     };
     
-    const txRes = await fetch(`http://127.0.0.1:${RPC_PORT}/rpc?url=${encodeURIComponent('zypo://api.zypo/api/transfer')}`, {
+    const txRes = await fetch(`http://127.0.0.1:${RPC_PORT}/rpc/account/transfer`, {
       method: 'POST',
       headers: { 'Authorization': RPC_TOKEN, 'Content-Type': 'application/json' },
       body: JSON.stringify(txBody)
     });
+    
+    if (!txRes.ok) {
+      const errorText = await txRes.text();
+      return { success: false, error: errorText || txRes.statusText };
+    }
     
     const txData = await txRes.json();
     return txData;
@@ -355,13 +429,15 @@ ipcMain.handle('import-key', async () => {
   const targetPath = path.join(daemonCwd, 'client_key.bin')
 
   console.log('[Identity] Source file selected:', sourcePath)
-  const { response } = await dialog.showMessageBox(mainWindow, {
-    type: 'warning',
-    buttons: ['Cancel', 'Replace Key'],
-    title: 'Confirm Identity Import',
-    message: 'Importing a new identity will replace your current PeerID and Wallet.',
-    detail: 'The current key will be backed up as client_key.bin.bak. The daemon will restart automatically.'
-  })
+  const response = await new Promise(resolve => {
+    ipcMain.once('modal-response-confirm', (_, res) => resolve(res));
+    mainWindow.webContents.send('show-modal', {
+      type: 'confirm',
+      title: 'Confirm Identity Import',
+      message: 'Importing a new identity will replace your current PeerID and Wallet.',
+      detail: 'The current key will be backed up as client_key.bin.bak. The daemon will restart automatically.'
+    });
+  });
 
   if (response !== 1) {
     console.log('[Identity] Import canceled by user.')

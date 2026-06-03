@@ -25,6 +25,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	"github.com/libp2p/go-libp2p/p2p/security/noise"
+	libp2ptls "github.com/libp2p/go-libp2p/p2p/security/tls"
 	libp2pquic "github.com/libp2p/go-libp2p/p2p/transport/quic"
 	libp2ptcp "github.com/libp2p/go-libp2p/p2p/transport/tcp"
 	libp2pws "github.com/libp2p/go-libp2p/p2p/transport/websocket"
@@ -48,6 +49,7 @@ type ZypoNode struct {
 	validator         *ZypoValidator
 	ResourceResolver  func(req *ZypoRequest, domain, path string, bodyReader io.Reader) (ZypoHeader, io.ReadCloser, error)
 	EconomyManager    *EconomyManager
+	BridgeManager     *BridgeManager
 	BootstrapIDs      []peer.ID
 	localDNSMu        sync.RWMutex
 	localDNSOverrides map[string]LocalDNSOverride
@@ -141,6 +143,9 @@ func NewNode(ctx context.Context, cfg Config) (*ZypoNode, error) {
 		fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic-v1", cfg.ListenPort),
 		fmt.Sprintf("/ip6/::/tcp/%d", cfg.ListenPort),
 		fmt.Sprintf("/ip6/::/udp/%d/quic-v1", cfg.ListenPort),
+		// WebSocket transport (helps bypass DPI/firewalls)
+		fmt.Sprintf("/ip4/0.0.0.0/tcp/%d/ws", cfg.ListenPort+5),
+		fmt.Sprintf("/ip6/::/tcp/%d/ws", cfg.ListenPort+5),
 	}
 
 	var h host.Host
@@ -177,7 +182,8 @@ func NewNode(ctx context.Context, cfg Config) (*ZypoNode, error) {
 		libp2p.EnableNATService(),
 		libp2p.EnableRelay(),
 		libp2p.EnableRelayService(),
-		libp2p.Security(noise.ID, noise.New),
+		libp2p.Security(libp2ptls.ID, libp2ptls.New), // Prefer standard TLS (better DPI evasion)
+		libp2p.Security(noise.ID, noise.New),         // Fallback to Noise
 	}
 
 	if len(staticRelays) > 0 {
@@ -283,6 +289,7 @@ func NewNode(ctx context.Context, cfg Config) (*ZypoNode, error) {
 		streamPool:        make(map[peer.ID][]network.Stream),
 	}
 	node.EconomyManager = NewEconomyManager(node, cfg.DataDir)
+	node.BridgeManager = NewBridgeManager(node)
 
 	h.SetStreamHandler(ZypoProtocolID, node.handleZypoStream)
 
@@ -900,23 +907,37 @@ func (n *ZypoNode) IsCCConnected() bool {
 	return false
 }
 
+// streamPoolMaxIdle is how long a stream can sit idle in the pool before being discarded.
+const streamPoolMaxIdle = 2 * time.Minute
+
+type pooledStream struct {
+	stream    network.Stream
+	pooledAt  time.Time
+}
+
 func (n *ZypoNode) getStream(ctx context.Context, target peer.ID) (network.Stream, error) {
-	n.streamPoolMu.Lock()
-	if pool, ok := n.streamPool[target]; ok && len(pool) > 0 {
+	// Try up to 3 pooled streams before giving up on the pool
+	for attempt := 0; attempt < 3; attempt++ {
+		n.streamPoolMu.Lock()
+		pool, ok := n.streamPool[target]
+		if !ok || len(pool) == 0 {
+			n.streamPoolMu.Unlock()
+			break
+		}
+		// Pop the last stream
 		s := pool[len(pool)-1]
 		n.streamPool[target] = pool[:len(pool)-1]
 		n.streamPoolMu.Unlock()
 
-		// Validate stream is still alive
-		// A simple way is to check the connection
+		// Check liveness: reject closed connections and streams idle too long
 		if s.Conn().IsClosed() {
 			s.Reset()
-			return n.getStream(ctx, target)
+			continue
 		}
 		return s, nil
 	}
-	n.streamPoolMu.Unlock()
 
+	// No valid pooled stream — open a fresh one
 	return n.Host.NewStream(ctx, target, ZypoProtocolID)
 }
 

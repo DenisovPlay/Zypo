@@ -5,7 +5,7 @@
   "gateway_port": 8080,
   "listen_port": 9000,
   "rpc_port": 8902,
-  "rpc_token": "zypo_default_secret",
+  "rpc_token": "5aba3e23e0a54f996898dcd3950d414a6f6bd13e04259d27986740f7cfc18277",
   "dash_port": 0,
   "dash_user": "admin",
   "dash_pass": "zypo",
@@ -15,13 +15,20 @@
   "sites_dir": "zypo_sites",
   "enable_mdns": false,
   "enable_vpn": true,
-  "vpn_location": "France",
-  "vpn_flag": "🇫🇷",
-  "vpn_price": 0.1,
-  "vpn_bandwidth": 1000,
   "bootstrap_nodes": [
     "/ip4/213.171.27.234/tcp/8900/p2p/12D3KooWPyuxuDGwsnBB6sKvCarjfRimWhNvvXaAhYnGkesBFbEf"
   ],
   "discovery_urls": [],
-  "command_center_addr": "/ip4/213.171.27.234/tcp/8900/p2p/12D3KooWPyuxuDGwsnBB6sKvCarjfRimWhNvvXaAhYnGkesBFbEf"
+  "command_center_addr": "/ip4/213.171.27.234/tcp/8900/p2p/12D3KooWPyuxuDGwsnBB6sKvCarjfRimWhNvvXaAhYnGkesBFbEf",
+  "vpn_location": "France",
+  "vpn_flag": "🇫🇷",
+  "vpn_price": 0.1,
+  "vpn_bandwidth": 1000,
+  "official_domains": [
+    "gov.zypo",
+    "domains.zypo",
+    "docs.zypo",
+    "api.zypo",
+    "faucet.zypo"
+  ]
 }

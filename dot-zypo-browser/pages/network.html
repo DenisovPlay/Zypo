@@ -73,9 +73,15 @@
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                     </div>
                     <h2 class="text-zinc-500 text-xs font-semibold uppercase tracking-widest mb-2" x-text="t('browser.network_connected_peers')"></h2>
-                    <div class="flex items-baseline gap-2">
+                    <div class="flex items-baseline gap-2 mb-2">
                         <span class="text-5xl font-light tracking-tight" x-text="stats.peers !== undefined ? stats.peers : '--'"></span>
                         <span class="text-zinc-400 font-medium text-sm" x-text="t('browser.network_nodes_count')"></span>
+                    </div>
+                    <div class="flex gap-2 text-[10px] uppercase font-bold tracking-widest text-zinc-500 mt-4" x-show="stats.transport_stats">
+                        <div class="flex flex-col"><span class="text-white text-sm" x-text="stats.transport_stats?.quic || 0"></span> QUIC</div>
+                        <div class="flex flex-col"><span class="text-white text-sm" x-text="stats.transport_stats?.ws || 0"></span> WS</div>
+                        <div class="flex flex-col"><span class="text-white text-sm" x-text="stats.transport_stats?.tcp || 0"></span> TCP</div>
+                        <div class="flex flex-col"><span class="text-white text-sm" x-text="stats.transport_stats?.relay || 0"></span> RELAY</div>
                     </div>
                 </div>
                 
@@ -105,6 +111,68 @@
                 </div>
             </div>
 
+            <!-- Diagnostics Panel -->
+            <div class="mt-8 p-6 glass rounded-3xl" x-show="stats.diagnostics">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-semibold flex items-center gap-2">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                        <span x-text="t('browser.diagnostics_title') || 'Diagnostics'"></span>
+                    </h2>
+                    <button @click="reconnect()" :disabled="loading" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-2">
+                        <svg x-show="loading" class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        <span x-text="t('browser.diagnostics_autofix') || 'Auto-Fix'"></span>
+                    </button>
+                </div>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="p-4 rounded-2xl bg-zinc-900/50 border border-zinc-800/50 flex items-center gap-4">
+                        <div class="w-10 h-10 rounded-full flex items-center justify-center shrink-0" :class="stats.diagnostics.dht_healthy ? 'bg-emerald-500/20 text-emerald-500' : 'bg-red-500/20 text-red-500'">
+                            <svg x-show="stats.diagnostics.dht_healthy" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            <svg x-show="!stats.diagnostics.dht_healthy" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </div>
+                        <div>
+                            <div class="font-medium" x-text="t('browser.diag_dht_title') || 'DHT Network'"></div>
+                            <div class="text-xs text-zinc-500" x-text="stats.diagnostics.dht_healthy ? (t('browser.diag_dht_ok') || 'Connected to swarm') : (t('browser.diag_dht_err') || 'No peers found. Check internet.')"></div>
+                        </div>
+                    </div>
+
+                    <div class="p-4 rounded-2xl bg-zinc-900/50 border border-zinc-800/50 flex items-center gap-4">
+                        <div class="w-10 h-10 rounded-full flex items-center justify-center shrink-0" :class="stats.diagnostics.cc_alive ? 'bg-emerald-500/20 text-emerald-500' : 'bg-amber-500/20 text-amber-500'">
+                            <svg x-show="stats.diagnostics.cc_alive" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            <svg x-show="!stats.diagnostics.cc_alive" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                        </div>
+                        <div>
+                            <div class="font-medium" x-text="t('browser.diag_cc_title') || 'Command Center'"></div>
+                            <div class="text-xs text-zinc-500" x-text="stats.diagnostics.cc_alive ? (t('browser.diag_cc_ok') || 'Synced & Verified') : (t('browser.diag_cc_err') || 'Syncing or offline. Reconnect.')"></div>
+                        </div>
+                    </div>
+
+                    <div class="p-4 rounded-2xl bg-zinc-900/50 border border-zinc-800/50 flex items-center gap-4">
+                        <div class="w-10 h-10 rounded-full flex items-center justify-center shrink-0" :class="stats.diagnostics.bridge_active ? 'bg-blue-500/20 text-blue-500' : 'bg-zinc-800 text-zinc-600'">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3z"/><path d="M12 8v8"/><path d="M8 12h8"/></svg>
+                        </div>
+                        <div>
+                            <div class="font-medium" x-text="t('browser.diag_bridge_title') || 'Bridge Protocol'"></div>
+                            <div class="text-xs text-zinc-500" x-text="stats.diagnostics.bridge_active ? (t('browser.diag_bridge_ok') || 'Relaying traffic for NAT peers') : (t('browser.diag_bridge_inactive') || 'Inactive (using direct mesh)')"></div>
+                        </div>
+                    </div>
+
+                    <div class="p-4 rounded-2xl bg-zinc-900/50 border border-zinc-800/50 flex items-center gap-4">
+                        <div class="w-10 h-10 rounded-full flex items-center justify-center shrink-0" :class="stats.diagnostics.vpn_active ? 'bg-purple-500/20 text-purple-500' : 'bg-zinc-800 text-zinc-600'">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        </div>
+                        <div>
+                            <div class="font-medium flex items-center gap-2">
+                                <span x-text="t('browser.diag_vpn_title') || 'VPN & DNS'"></span>
+                                <span x-show="stats.diagnostics.vpn_active && !stats.diagnostics.tun_available" class="text-[9px] uppercase font-bold bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded cursor-help" title="Requires root for full system routing. Currently ONLY Zypo Browser traffic is using VPN.">BROWSER PROXY</span>
+                                <span x-show="stats.diagnostics.vpn_active && stats.diagnostics.tun_available" class="text-[9px] uppercase font-bold bg-emerald-500/20 text-emerald-500 px-1.5 py-0.5 rounded cursor-help" title="Full system network is being routed through VPN.">TUN SYSTEM VPN</span>
+                            </div>
+                            <div class="text-xs text-zinc-500" x-text="stats.diagnostics.vpn_active ? (stats.diagnostics.tun_available ? (t('browser.diag_vpn_ok') || 'Full System Routing (TUN Active)') : 'Only browser traffic is proxied. Need Admin/Root for full system VPN.') : (t('browser.diag_vpn_inactive') || 'Not connected')"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Topology Section -->
             <div class="mt-12 mb-8">
                 <h2 class="text-xl font-semibold mb-6 flex items-center gap-2" x-text="t('browser.network_topology')"></h2>
@@ -118,9 +186,12 @@
                                 </div>
                                 <div class="min-w-0">
                                     <div class="text-sm font-mono truncate" x-text="peer.id"></div>
-                                    <div class="flex gap-2 mt-1">
+                                    <div class="flex gap-2 mt-2 flex-wrap">
                                         <span x-show="peer.is_bootstrap" class="text-[9px] font-bold uppercase bg-emerald-500/20 text-emerald-500 px-1.5 py-0.5 rounded" x-text="t('browser.network_bootstrap_node')"></span>
                                         <span x-show="peer.is_relayed" class="text-[9px] font-bold uppercase bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded" x-text="t('browser.network_relayed_node')"></span>
+                                        <template x-for="tr in peer.transports">
+                                            <span class="text-[9px] font-bold uppercase bg-blue-500/20 text-blue-500 px-1.5 py-0.5 rounded" x-text="tr"></span>
+                                        </template>
                                         <template x-for="addr in peer.addrs">
                                             <span class="text-[9px] font-mono text-zinc-600 truncate max-w-[200px]" x-text="addr"></span>
                                         </template>

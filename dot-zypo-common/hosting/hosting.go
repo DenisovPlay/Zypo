@@ -190,6 +190,12 @@ func GetResourceData(n *node.ZypoNode, req *node.ZypoRequest, domain, path strin
 				}
 			}
 		}
+		
+		// Securely inject the authenticated Peer ID
+		if req.RemotePeer != "" {
+			httpReq.Header.Set("X-Zypo-Peer-Id", req.RemotePeer)
+		}
+		httpReq.Header.Set("X-Zypo-Network", "true")
 
 		respBytes, err := ExecuteWasm(n, wasmPath, httpReq)
 		if err != nil {
@@ -297,6 +303,12 @@ func GetResourceData(n *node.ZypoNode, req *node.ZypoRequest, domain, path strin
 				}
 			}
 		}
+
+		// Securely inject the authenticated Peer ID
+		if req.RemotePeer != "" {
+			httpReq.Header.Set("X-Zypo-Peer-Id", req.RemotePeer)
+		}
+		httpReq.Header.Set("X-Zypo-Network", "true")
 
 		resp, err := client.Do(httpReq)
 		if err != nil {

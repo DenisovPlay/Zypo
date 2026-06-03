@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -96,24 +95,10 @@ func StartTUN(name string, vpnClient *P2PVPNClient, excludedIPs []string) (*TUNM
 	tm := &TUNManager{iface: iface, s: s, vpnClient: vpnClient, excludedIPs: excludedIPs}
 	GlobalTUN = tm
 
-	// Exclude system DNS servers to prevent DNS drops (since UDP proxy is not implemented)
-	if b, err := os.ReadFile("/etc/resolv.conf"); err == nil {
-		lines := strings.Split(string(b), "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "nameserver ") {
-				ip := strings.TrimSpace(strings.TrimPrefix(line, "nameserver "))
-				if ip != "" && ip != "127.0.0.1" && ip != "::1" {
-					tm.excludedIPs = append(tm.excludedIPs, ip)
-				}
-			}
-		}
-	}
-
 	tm.detectGateway()
 	tm.setupHandlers()
 
-	log.Printf("[TUN] Interface %s initialized (Down/Idle).", name)
+	log.Printf("[TUN] Interface %s initialized with TCP+UDP forwarding (Down/Idle).", name)
 	return tm, nil
 }
 
@@ -194,6 +179,7 @@ func (tm *TUNManager) Cleanup() {
 // OS-specific functions (cleanupRoutes, configureRouting, configureOS) are implemented in tun_linux.go, tun_darwin.go, etc.
 
 func (tm *TUNManager) setupHandlers() {
+	// TCP forwarder: intercepts all TCP connections and tunnels them via P2P VPN
 	tcpForwarder := tcp.NewForwarder(tm.s, 0, 65535, func(r *tcp.ForwarderRequest) {
 		var w waiter.Queue
 		ep, terr := r.CreateEndpoint(&w)
@@ -205,6 +191,19 @@ func (tm *TUNManager) setupHandlers() {
 		go tm.handleTCPConn(gonet.NewTCPConn(&w, ep))
 	})
 	tm.s.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
+
+	// UDP forwarder: intercepts UDP datagrams (DNS on :53, etc.) and tunnels via P2P VPN
+	// This enables DNS-over-VPN and UDP app support through the TUN interface.
+	udpForwarder := udp.NewForwarder(tm.s, func(r *udp.ForwarderRequest) bool {
+		var w waiter.Queue
+		ep, terr := r.CreateEndpoint(&w)
+		if terr != nil {
+			return false
+		}
+		go tm.handleUDPConn(gonet.NewUDPConn(&w, ep))
+		return true
+	})
+	tm.s.SetTransportProtocolHandler(udp.ProtocolNumber, udpForwarder.HandlePacket)
 }
 
 func (tm *TUNManager) handleTCPConn(conn net.Conn) {
@@ -258,7 +257,71 @@ func (tm *TUNManager) handleTCPConn(conn net.Conn) {
 	}()
 
 	err2 := <-errChan
-	log.Printf("[TUN] Connection error for %s: %v", targetAddr, err2)
-	log.Printf("[TUN] Connection error for %s: %v", targetAddr, err)
-	log.Printf("[TUN] Closed TCP connection to %s", targetAddr)
+	if err2 != nil {
+		log.Printf("[TUN] Connection closed for %s: %v", targetAddr, err2)
+	} else {
+		log.Printf("[TUN] Connection closed for %s (clean shutdown)", targetAddr)
+	}
+}
+
+// handleUDPConn handles intercepted UDP datagrams and forwards them through the P2P VPN.
+// This enables DNS-over-VPN (port 53) and general UDP app support.
+func (tm *TUNManager) handleUDPConn(conn *gonet.UDPConn) {
+	defer conn.Close()
+	if tm.vpnClient == nil {
+		return
+	}
+
+	// LocalAddr is the original destination the client was sending UDP to
+	targetAddr := conn.LocalAddr().String()
+
+	isDNS := false
+	if _, port, err := net.SplitHostPort(targetAddr); err == nil && port == "53" {
+		isDNS = true
+		log.Printf("[TUN/UDP] Intercepted DNS query → %s", targetAddr)
+	} else {
+		log.Printf("[TUN/UDP] Intercepted UDP datagram → %s", targetAddr)
+	}
+	_ = isDNS
+
+	// Open a VPN stream for UDP forwarding using a dedicated protocol
+	vpnConn, err := tm.vpnClient.DialUDP(targetAddr)
+	if err != nil {
+		log.Printf("[TUN/UDP] Failed to open UDP VPN stream for %s: %v", targetAddr, err)
+		return
+	}
+	defer vpnConn.Close()
+
+	// Bidirectional pipe for UDP datagrams
+	errChan := make(chan error, 2)
+	go func() {
+		buf := make([]byte, 65535)
+		for {
+			n, err := conn.Read(buf)
+			if n > 0 {
+				vpnConn.Write(buf[:n])
+				atomic.AddUint64(&tm.BytesSent, uint64(n))
+			}
+			if err != nil {
+				errChan <- err
+				return
+			}
+		}
+	}()
+	go func() {
+		buf := make([]byte, 65535)
+		for {
+			n, err := vpnConn.Read(buf)
+			if n > 0 {
+				conn.Write(buf[:n])
+				atomic.AddUint64(&tm.BytesReceived, uint64(n))
+			}
+			if err != nil {
+				errChan <- err
+				return
+			}
+		}
+	}()
+
+	<-errChan
 }

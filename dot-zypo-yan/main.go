@@ -94,7 +94,13 @@ func main() {
 	// Start VPN if requested via flag OR config
 	if *enableVpn || cfg.EnableVpn {
 		n.StartP2PVPNServer()
-		log.Printf("[P2P VPN] Service started on Yan Node")
+		n.StartP2PVPNUDPServer()
+		log.Printf("[P2P VPN] Service started on Yan Node (TCP+UDP)")
+		
+		if n.BridgeManager != nil {
+			n.BridgeManager.Enable()
+			log.Println("[Bridge] Enabled on Yan Node for NAT'd peers")
+		}
 		
 		go func() {
 			time.Sleep(10 * time.Second)

@@ -55,8 +55,15 @@ func main() {
 		log.Fatalf("Failed to start: %v", err)
 	}
 
-	// Start VPN Provider (Server as an exit node)
+	// Start VPN Provider (Server as an exit node) — TCP and UDP
 	n.StartP2PVPNServer()
+	n.StartP2PVPNUDPServer()
+
+	// Enable bridge mode: server nodes with public IPs act as bridges for NAT'd clients
+	if n.BridgeManager != nil {
+		n.BridgeManager.Enable()
+		log.Println("[Server] Bridge mode enabled — this node will relay traffic for NAT'd peers")
+	}
 
 	log.Println("=== ZYPO SERVER NODE IS RUNNING ===")
 

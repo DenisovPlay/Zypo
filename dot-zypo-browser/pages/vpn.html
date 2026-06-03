@@ -240,6 +240,13 @@
                                 <span x-text="t('browser.vpn_status_connected')"></span>
                             </div>
                             <div class="text-2xl font-medium text-white" x-text="getSelectedNodeLocation()"></div>
+                            <div x-show="!vpnStatus.tun_available" class="mt-4 text-xs text-amber-400 max-w-sm mx-auto bg-amber-500/10 p-4 rounded-xl border border-amber-500/30 font-medium">
+                                <div class="font-bold uppercase tracking-widest mb-2 flex justify-center items-center gap-2 text-amber-500">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                                    Browser Proxy Only
+                                </div>
+                                <span class="opacity-90">Only websites opened inside Zypo Browser use this VPN. To route your entire PC network, restart Zypo as Administrator/Root to enable TUN.</span>
+                            </div>
                         </div>
                     </template>
                 </div>

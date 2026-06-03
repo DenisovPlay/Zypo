@@ -116,6 +116,14 @@ func StartClientRPC(port int, token string, dataDir string, getter func() *node.
 		}
 		json.NewEncoder(w).Encode(map[string]bool{"success": true})
 	}))
+	mux.HandleFunc("/rpc/bridge/status", auth(func(w http.ResponseWriter, r *http.Request) {
+		n := srv.nodeGetter()
+		if n == nil || n.BridgeManager == nil {
+			http.Error(w, "Bridge Manager not initialized", 503)
+			return
+		}
+		json.NewEncoder(w).Encode(n.BridgeManager.Status())
+	}))
 
 	// Enterprise Metrics
 	mux.Handle("/metrics", promhttp.Handler())
@@ -269,17 +277,34 @@ func handleRpcStatus(n *node.ZypoNode, w http.ResponseWriter, r *http.Request) {
 		Addrs       []string `json:"addrs"`
 		IsRelayed   bool     `json:"is_relayed"`
 		IsBootstrap bool     `json:"is_bootstrap"`
+		Transports  []string `json:"transports"`
 	}
 	topology := make([]PeerInfo, 0, len(peers))
+	
+	transportCounts := map[string]int{"tcp": 0, "quic": 0, "ws": 0, "relay": 0}
+	
 	for _, p := range peers {
 		conns := n.Host.Network().ConnsToPeer(p)
 		isRelayed := false
 		addrs := make([]string, 0)
-		if len(conns) > 0 {
-			addr := conns[0].RemoteMultiaddr().String()
+		transports := make([]string, 0)
+		
+		for _, c := range conns {
+			addr := c.RemoteMultiaddr().String()
 			addrs = append(addrs, addr)
 			if strings.Contains(addr, "/p2p-circuit") {
 				isRelayed = true
+				transportCounts["relay"]++
+				transports = append(transports, "relay")
+			} else if strings.Contains(addr, "/ws") {
+				transportCounts["ws"]++
+				transports = append(transports, "ws")
+			} else if strings.Contains(addr, "/quic") {
+				transportCounts["quic"]++
+				transports = append(transports, "quic")
+			} else if strings.Contains(addr, "/tcp") {
+				transportCounts["tcp"]++
+				transports = append(transports, "tcp")
 			}
 		}
 
@@ -290,6 +315,7 @@ func handleRpcStatus(n *node.ZypoNode, w http.ResponseWriter, r *http.Request) {
 			Addrs:       addrs,
 			IsRelayed:   isRelayed,
 			IsBootstrap: isBootstrap,
+			Transports:  transports,
 		})
 	}
 
@@ -299,6 +325,8 @@ func handleRpcStatus(n *node.ZypoNode, w http.ResponseWriter, r *http.Request) {
 			"is_operational": GlobalP2PVPNClient.providerID != "",
 		}
 	}
+	
+	bridgeActive := n.BridgeManager != nil && n.BridgeManager.IsEnabled()
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"peer_id":        n.Host.ID().String(),
@@ -308,6 +336,14 @@ func handleRpcStatus(n *node.ZypoNode, w http.ResponseWriter, r *http.Request) {
 		"cc_connected":   ccConnected,
 		"vpn":            vpnStatus,
 		"topology":       topology,
+		"transport_stats": transportCounts,
+		"diagnostics": map[string]interface{}{
+			"dht_healthy": len(peers) > 0,
+			"cc_alive": ccConnected,
+			"bridge_active": bridgeActive,
+			"vpn_active": GlobalP2PVPNClient != nil && GlobalP2PVPNClient.providerID != "",
+			"tun_available": GlobalTUN != nil,
+		},
 	})
 }
 
@@ -339,12 +375,13 @@ func handleRpcAccountTransfer(n *node.ZypoNode, w http.ResponseWriter, r *http.R
 		return
 	}
 
-	if _, err := n.EconomyManager.CreateAndSendTransaction(treq.To, treq.Amount, treq.Comment); err != nil {
+	tx, err := n.EconomyManager.CreateAndSendTransaction(treq.To, treq.Amount, treq.Comment)
+	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{"status": 200, "success": true})
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": 200, "success": true, "tx_hash": tx.ID})
 }
 
 func handleRpcSubmitDomainRequest(n *node.ZypoNode, w http.ResponseWriter, r *http.Request) {
@@ -445,6 +482,7 @@ func handleRpcVPNStatus(n *node.ZypoNode, w http.ResponseWriter, r *http.Request
 		"is_operational":   false,
 		"bytes_sent":       0,
 		"bytes_received":   0,
+		"tun_available":    GlobalTUN != nil,
 	}
 	if GlobalP2PVPNClient.providerID != "" {
 		status["connection_state"] = "connected"

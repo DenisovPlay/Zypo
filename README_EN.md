@@ -15,10 +15,19 @@ Unlike traditional systems, Zypo has no "central bank".
 
 ### 2. Bullet-Proof VPN & Proxy
 A full P2P tunnel over libp2p with end-to-end encryption.
-*   **SOCKS5 & Forward Proxy (HTTPS):** Built-in local proxy servers (SOCKS5 on port `8910`, HTTP Proxy on `8903`) for reliable traffic routing. Full HTTPS (CONNECT) support is provided via a local TLS MITM, allowing encrypted `.zypo` websites to open in standard browsers (Chrome/Firefox).
-*   **Optional TUN (Linux/macOS):** With administrator privileges, you can launch a virtual network interface to transparently intercept and route all OS TCP traffic.
-*   **Windows Fallback:** If TUN drivers are unavailable (default behavior on Windows), the node gracefully and safely falls back to a SOCKS5-only mode.
+*   **Anti-DPI Transports:** Zypo dynamically falls back from TCP and QUIC to **WebSocket-over-TLS** to bypass Deep Packet Inspection.
+*   **SOCKS5 & Forward Proxy (HTTPS):** Built-in local proxy servers (SOCKS5 on port `1080`, HTTP Proxy on `8903`). Full HTTPS (CONNECT) support is provided via a local TLS MITM.
+*   **Bridge Protocol:** Nodes with open ports automatically act as Circuit Relays, helping peers behind strict NATs connect to the network.
+*   **UDP Datagram Forwarding:** Full support for tunneling TCP and UDP traffic, including interception and tunneling of DNS queries (port `53`).
 *   **DHT Discovery:** VPN providers are discovered via a distributed hash table (Kademlia), eliminating the need for central registries.
+
+### 2.5 Active Network Ports
+*   **8900** (TCP/QUIC) — Primary P2P listening port.
+*   **8901** (TCP/WS) — Fallback WebSockets port for Anti-DPI.
+*   **8903** (HTTP) — Local RPC API (Browser to Daemon communication).
+*   **8999** (UDP) — Local Area Network (LAN) discovery broadcast.
+*   **1080** (TCP) — Local SOCKS5 proxy port.
+*   **53** (UDP) — DNS Resolution tunneling port.
 
 ### 3. Distributed DNS & Secure Hosting
 *   **Zypo DNS:** Naming system for zones like `.zypo`, `.mesh`, `.rus`, etc.
@@ -70,3 +79,6 @@ go run dot-zypo-server/main.go
 
 ## 📝 Documentation and Deployment
 Detailed instructions on running the network, hosting your own websites, and configuring Reverse Proxy are available in the `docs/user_guide.md` file.
+
+**Developer Notice!**
+This public README covers the general operation of the network. Strictly confidential information (secret tokens, private certificate keys, internal hidden ports, and detailed security architecture) is located exclusively in the protected `internal_docs/` directory.

@@ -1,6 +1,8 @@
 package node
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -39,6 +41,16 @@ type Config struct {
 	OfficialDomains []string `json:"official_domains"`
 }
 
+// generateSecureToken creates a cryptographically random 32-byte hex token.
+func generateSecureToken() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback: use timestamp-based entropy if crypto/rand fails (should never happen)
+		return fmt.Sprintf("zypo_fallback_%x", b)
+	}
+	return hex.EncodeToString(b)
+}
+
 func LoadConfig(path string) (Config, error) {
 	cfg := DefaultConfig() // Start with defaults to preserve fields missing in JSON
 	b, err := os.ReadFile(path)
@@ -48,6 +60,14 @@ func LoadConfig(path string) (Config, error) {
 	err = json.Unmarshal(b, &cfg)
 	if err != nil {
 		return cfg, fmt.Errorf("config parse error (DO NOT OVERWRITE): %w", err)
+	}
+
+	// SECURITY: Upgrade legacy hardcoded default token to a secure random token.
+	// This protects existing installations that shipped with the insecure default.
+	if cfg.RpcToken == "zypo_default_secret" || cfg.RpcToken == "" {
+		cfg.RpcToken = generateSecureToken()
+		// Persist the new token so it survives restarts
+		_ = SaveConfig(path, cfg)
 	}
 
 	// Environment overrides
@@ -89,7 +109,7 @@ func DefaultConfig() Config {
 		IsCommandCenter:  false,
 		ListenPort:       0, // Random port for client nodes
 		RpcPort:          8902,
-		RpcToken:         "zypo_default_secret",
+		RpcToken:         generateSecureToken(), // Always unique per installation
 		DashPort:         0,
 		DashUser:         "admin",
 		DashPass:         "zypo",

@@ -20,7 +20,7 @@ func (v *ZypoValidator) Validate(key string, value []byte) error {
 		if err := json.Unmarshal(value, &ann); err != nil {
 			return fmt.Errorf("failed to unmarshal vpn announcement: %w", err)
 		}
-		// In a production app, we'd verify the signature here too
+		// Signature is verified in DiscoverVPNNodes; here we just check structure.
 		return nil
 	}
 
@@ -42,10 +42,18 @@ func (v *ZypoValidator) Validate(key string, value []byte) error {
 		return fmt.Errorf("domain mismatch: key=%s, record=%s", domain, record.Domain)
 	}
 
+	// SECURITY: Always require a non-empty signature in the record.
+	// An unsigned record is always rejected regardless of Oracle key status.
+	if len(record.Signature) == 0 {
+		return fmt.Errorf("rejected unsigned DNS record for %s", domain)
+	}
+
 	if v.OraclePubKey == nil {
-		// MESH-ONLY MODE FALLBACK: If CC is unreachable and we have no Oracle key, 
-		// we trust the DHT record blindly. This is insecure against spoofing, but keeps the network alive.
-		return nil
+		// SECURITY: Oracle key is not known yet.
+		// We refuse to accept any DNS record we cannot verify — this prevents
+		// attackers from poisoning the DHT before we learn the real Oracle key.
+		// The node must connect to the Command Center first to obtain the key.
+		return fmt.Errorf("rejected DNS record for %s: Oracle public key not yet known (connect to CC first)", domain)
 	}
 
 	valid, err := VerifyRecord(v.OraclePubKey, &record)

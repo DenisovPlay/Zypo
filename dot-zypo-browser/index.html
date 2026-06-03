@@ -198,7 +198,7 @@
         status: 'offline', peers: 0, balance: 0, peerId: '...',
         economyStatus: 'offline', isCached: false, transferTo: '', transferAmount: '',
         translations: {},
-        modal: { open: false, title: '', message: '', type: 'info' },
+        modal: { open: false, title: '', message: '', type: 'info', amount: 0, to: '', comment: '' },
 
         async init() {
           const { ipcRenderer } = window.electron;
@@ -209,6 +209,15 @@
           window.addEventListener('zypo-sdk-ready', () => this.updateStats());
           ipcRenderer.on('settings-updated', async () => {
              this.translations = await ipcRenderer.invoke('get-translations', (await ipcRenderer.invoke('get-settings')).language || 'en');
+          });
+          ipcRenderer.on('show-modal', (opts) => {
+             this.modal.title = opts.title || '';
+             this.modal.message = opts.message || '';
+             this.modal.type = opts.type || 'info';
+             this.modal.amount = opts.amount || 0;
+             this.modal.to = opts.to || '';
+             this.modal.comment = opts.comment || '';
+             this.modal.open = true;
           });
         },
         async updateStats() {
@@ -261,30 +270,90 @@
                  headers: { 'Content-Type': 'application/json', 'Authorization': token },
                  body: JSON.stringify({ to: this.transferTo.trim(), amount: parseInt(this.transferAmount), from: this.peerId })
               });
+              if (!res.ok) {
+                 const errText = await res.text();
+                 throw new Error(errText || res.statusText);
+              }
               const data = await res.json();
               if (data.success) { this.alert(this.t('browser.success'), this.t('browser.transfer_success'), 'success'); this.transferTo = ''; this.transferAmount = ''; this.userOpen = false; this.updateStats(); }
-              else { this.alert(this.t('browser.error'), this.t('browser.transfer_error'), 'error'); }
+              else { this.alert(this.t('browser.error'), data.error || this.t('browser.transfer_error'), 'error'); }
            } catch(e) { this.alert('Error', e.message, 'error'); }
         },
         alert(title, message, type = 'info') {
           this.modal.title = title; this.modal.message = message; this.modal.type = type; this.modal.open = true;
+        },
+        respondModal(responseValue) {
+          this.modal.open = false;
+          window.electron.ipcRenderer.send(`modal-response-${this.modal.type}`, responseValue);
         }
       }
     }
   </script>
 
   <!-- Global Modal UI -->
-  <div x-show="modal.open" x-cloak class="fixed inset-0 z-[10000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm" x-transition.opacity>
-    <div @click.away="modal.open = false" class="w-full max-w-md bg-[#18181b] border border-zinc-800 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden" x-transition.scale>
-      <div class="absolute top-0 right-0 w-32 h-32 opacity-20 rounded-full blur-3xl pointer-events-none" :class="{'bg-blue-500': modal.type === 'info','bg-green-500': modal.type === 'success','bg-red-500': modal.type === 'error'}"></div>
-      <div class="flex items-center justify-center w-16 h-16 rounded-full mb-6 mx-auto" :class="{'bg-blue-500/10 text-blue-400': modal.type === 'info','bg-green-500/10 text-green-400': modal.type === 'success','bg-red-500/10 text-red-400': modal.type === 'error'}">
+  <div x-show="modal.open" x-cloak class="fixed inset-0 z-[10000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm" 
+       x-transition:enter="transition ease-out duration-300"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       x-transition:leave="transition ease-in duration-200"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       @keydown.window.escape="if(modal.open) { if(modal.type==='payment'||modal.type==='confirm') respondModal(0); else modal.open=false; }">
+    <div @click.away="modal.type !== 'payment' && modal.type !== 'confirm' ? modal.open = false : null" 
+         class="w-full max-w-md bg-[#18181b] border border-zinc-800 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden" 
+         x-show="modal.open"
+         x-transition:enter="transition cubic-bezier(0.34, 1.56, 0.64, 1) duration-500"
+         x-transition:enter-start="opacity-0 scale-75 translate-y-8 rotate-3"
+         x-transition:enter-end="opacity-100 scale-100 translate-y-0 rotate-0"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100 scale-100 translate-y-0"
+         x-transition:leave-end="opacity-0 scale-95 translate-y-4">
+      <div class="absolute top-0 right-0 w-32 h-32 opacity-20 rounded-full blur-3xl pointer-events-none" :class="{'bg-blue-500': modal.type === 'info','bg-green-500': modal.type === 'success','bg-red-500': modal.type === 'error','bg-purple-500': modal.type === 'payment', 'bg-amber-500': modal.type === 'confirm'}"></div>
+      
+      <div class="flex items-center justify-center w-16 h-16 rounded-full mb-6 mx-auto" :class="{'bg-blue-500/10 text-blue-400': modal.type === 'info','bg-green-500/10 text-green-400': modal.type === 'success','bg-red-500/10 text-red-400': modal.type === 'error','bg-purple-500/10 text-purple-400': modal.type === 'payment','bg-amber-500/10 text-amber-400': modal.type === 'confirm'}">
         <template x-if="modal.type === 'success'"><svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></template>
         <template x-if="modal.type === 'error'"><svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></template>
         <template x-if="modal.type === 'info'"><svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></template>
+        <template x-if="modal.type === 'payment'"><svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg></template>
+        <template x-if="modal.type === 'confirm'"><svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></template>
       </div>
-      <h3 class="text-2xl font-black mb-2 text-white text-center" x-text="modal.title"></h3>
-      <p class="text-zinc-500 text-sm mb-8 leading-relaxed text-center" x-text="modal.message"></p>
-      <button @click="modal.open = false" class="w-full py-4 bg-zinc-800 hover:bg-zinc-700 text-white rounded-2xl font-black transition-all" x-text="t('browser.modal_dismiss')"></button>
+
+      <h3 class="text-2xl font-black mb-2 text-white text-center" x-text="modal.type === 'payment' ? (t('browser.modal_payment_title') || 'Zypo Payment Request') : modal.title"></h3>
+      <p class="text-zinc-400 text-sm mb-6 leading-relaxed text-center" x-text="modal.type === 'payment' ? (t('browser.modal_payment_message') || 'A website is requesting a payment of {amount} ZPCN.').replace('{amount}', modal.amount) : modal.message"></p>
+
+      <!-- Extra Details for Payment Mode -->
+      <template x-if="modal.type === 'payment'">
+        <div class="mb-8 space-y-3">
+          <div class="bg-black/40 border border-zinc-800/50 rounded-2xl p-4 flex flex-col items-center justify-center">
+             <div class="text-[10px] text-zinc-500 uppercase font-black mb-1" x-text="t('browser.modal_amount') || 'Amount'"></div>
+             <div class="text-3xl font-bold text-white"><span x-text="modal.amount"></span> <span class="text-sm text-blue-400">ZPCN</span></div>
+          </div>
+          <div class="bg-black/40 border border-zinc-800/50 rounded-2xl p-3">
+             <div class="text-[10px] text-zinc-500 uppercase font-black mb-1" x-text="t('browser.modal_recipient') || 'Recipient'"></div>
+             <div class="text-xs text-zinc-300 font-mono break-all" x-text="modal.to"></div>
+          </div>
+          <div class="bg-black/40 border border-zinc-800/50 rounded-2xl p-3" x-show="modal.comment">
+             <div class="text-[10px] text-zinc-500 uppercase font-black mb-1" x-text="t('browser.modal_comment') || 'Comment'"></div>
+             <div class="text-xs text-zinc-300" x-text="modal.comment"></div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Buttons -->
+      <div class="flex flex-col gap-3">
+        <!-- Confirm/Payment Buttons -->
+        <template x-if="modal.type === 'payment' || modal.type === 'confirm'">
+          <div class="flex gap-3">
+            <button @click="respondModal(0)" class="flex-1 py-4 bg-zinc-800 hover:bg-zinc-700 text-white rounded-2xl font-black transition-all duration-300 active:scale-95" x-text="t('browser.modal_cancel') || 'Cancel'"></button>
+            <button @click="respondModal(1)" class="flex-1 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black transition-all duration-300 shadow-lg active:scale-95" x-text="modal.type === 'payment' ? (t('browser.modal_pay') || 'Pay Now') : (t('browser.modal_confirm') || 'Confirm')"></button>
+          </div>
+        </template>
+        
+        <!-- Standard Dismiss Button -->
+        <template x-if="modal.type !== 'payment' && modal.type !== 'confirm'">
+          <button @click="modal.open = false" class="w-full py-4 bg-zinc-800 hover:bg-zinc-700 text-white rounded-2xl font-black transition-all duration-300 active:scale-95" x-text="t('browser.modal_dismiss') || 'Close'"></button>
+        </template>
+      </div>
     </div>
   </div>
 

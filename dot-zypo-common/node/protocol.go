@@ -10,12 +10,64 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 )
+
+// --- Per-peer stream rate limiter ---
+// Prevents a single malicious peer from flooding us with streams.
+var (
+	peerStreamMu    sync.Mutex
+	peerStreamCount = make(map[peer.ID]*peerRateEntry)
+)
+
+type peerRateEntry struct {
+	count     int
+	windowEnd time.Time
+	bannedUntil time.Time
+}
+
+const (
+	streamRateLimit  = 50             // max streams per window per peer
+	streamRateWindow = 10 * time.Second
+	streamBanDur     = 30 * time.Second
+)
+
+func checkStreamRateLimit(pid peer.ID) bool {
+	peerStreamMu.Lock()
+	defer peerStreamMu.Unlock()
+
+	now := time.Now()
+	entry, ok := peerStreamCount[pid]
+	if !ok {
+		entry = &peerRateEntry{}
+		peerStreamCount[pid] = entry
+	}
+
+	// Still banned?
+	if now.Before(entry.bannedUntil) {
+		return false
+	}
+
+	// New window?
+	if now.After(entry.windowEnd) {
+		entry.count = 0
+		entry.windowEnd = now.Add(streamRateWindow)
+	}
+
+	entry.count++
+	if entry.count > streamRateLimit {
+		entry.bannedUntil = now.Add(streamBanDur)
+		log.Printf("[RateLimit] Peer %s exceeded stream limit (%d/10s), banned for %v",
+			pid, entry.count, streamBanDur)
+		return false
+	}
+	return true
+}
 
 type ZypoRequest struct {
 	Action     string              `json:"action"`
@@ -35,6 +87,14 @@ type ZypoHeader struct {
 
 func (n *ZypoNode) handleZypoStream(s network.Stream) {
 	defer s.Close()
+
+	// Rate limit: reject streams from peers that are sending too many requests.
+	remotePID := s.Conn().RemotePeer()
+	if !checkStreamRateLimit(remotePID) {
+		log.Printf("[P2P] Rate limit hit for peer %s, dropping stream", remotePID)
+		return
+	}
+
 	reader := bufio.NewReader(s)
 
 	// 1. Read Request Header
@@ -141,10 +201,17 @@ func (n *ZypoNode) handleZypoStream(s network.Stream) {
 			bodyStream = io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`{"balance": %f}`, balance))))
 			header = ZypoHeader{Status: 200, Mime: "application/json"}
 		} else if req.Action == "economy_dump" && n.cfg.IsCommandCenter {
-			// Oracle command to dump the entire economy state
-			dump := n.EconomyManager.DumpState()
-			bodyStream = io.NopCloser(bytes.NewReader(dump))
-			header = ZypoHeader{Status: 200, Mime: "application/json", Size: int64(len(dump))}
+			// SECURITY: Only allow the node itself to dump the ledger (for internal sync).
+			// External peers must not be able to retrieve the full financial ledger.
+			if s.Conn().RemotePeer() != n.Host.ID() {
+				log.Printf("[Economy] Rejected economy_dump from external peer %s", s.Conn().RemotePeer())
+				header = ZypoHeader{Status: 403}
+			} else {
+				// Oracle command to dump the entire economy state (internal use only)
+				dump := n.EconomyManager.DumpState()
+				bodyStream = io.NopCloser(bytes.NewReader(dump))
+				header = ZypoHeader{Status: 200, Mime: "application/json", Size: int64(len(dump))}
+			}
 		} else {
 			header = ZypoHeader{Status: 403}
 		}
@@ -155,6 +222,21 @@ func (n *ZypoNode) handleZypoStream(s network.Stream) {
 		} else {
 			header = ZypoHeader{Status: 403}
 		}
+	} else if req.Action == "cc_gossip" {
+		// Gossip: respond with known CC multiaddrs so peers can discover the CC.
+		// All nodes participate — even non-CC nodes share what they know.
+		n.bootstrapMu.Lock()
+		var ccAddrs []string
+		for _, bid := range n.BootstrapIDs {
+			addrs := n.Host.Peerstore().Addrs(bid)
+			for _, a := range addrs {
+				ccAddrs = append(ccAddrs, fmt.Sprintf("%s/p2p/%s", a.String(), bid.String()))
+			}
+		}
+		n.bootstrapMu.Unlock()
+		data, _ := json.Marshal(ccAddrs)
+		bodyStream = io.NopCloser(bytes.NewReader(data))
+		header = ZypoHeader{Status: 200, Mime: "application/json", Size: int64(len(data))}
 	} else {
 		header = ZypoHeader{Status: 400}
 	}

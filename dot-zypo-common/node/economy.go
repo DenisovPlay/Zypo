@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/crypto"
+	
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
@@ -26,10 +28,12 @@ type Transaction struct {
 }
 
 type Account struct {
-	Balance float64         `json:"balance"` // ZPCN
-	History []Transaction   `json:"history"`
-	Rating  float64         `json:"rating"`
-	SeenTxs map[string]bool `json:"seen_txs"`
+	Balance float64           `json:"balance"` // ZPCN
+	History []Transaction     `json:"history"`
+	Rating  float64           `json:"rating"`
+	// SeenTxs maps transaction ID to the unix millisecond timestamp when it was first seen.
+	// Entries older than seenTxTTL are purged periodically to prevent unbounded memory growth.
+	SeenTxs map[string]int64  `json:"seen_txs"`
 }
 
 type EconomyManager struct {
@@ -40,6 +44,10 @@ type EconomyManager struct {
 	mu             sync.RWMutex
 }
 
+// seenTxTTL is how long we remember a transaction ID before it can be pruned.
+// Must be longer than the maximum possible gossip propagation delay.
+const seenTxTTL = 30 * 24 * time.Hour // 30 days
+
 func NewEconomyManager(node *ZypoNode, dataDir string) *EconomyManager {
 	os.MkdirAll(dataDir, 0755)
 	em := &EconomyManager{
@@ -49,7 +57,42 @@ func NewEconomyManager(node *ZypoNode, dataDir string) *EconomyManager {
 		prepaidTraffic: make(map[string]int64),
 	}
 	em.load()
+	// Background goroutine: prune SeenTxs entries older than seenTxTTL
+	go em.cleanupSeenTxsLoop(node.ctx)
 	return em
+}
+
+// cleanupSeenTxsLoop periodically purges old SeenTxs entries to prevent memory leaks.
+func (em *EconomyManager) cleanupSeenTxsLoop(ctx context.Context) {
+	ticker := time.NewTicker(6 * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			em.cleanupSeenTxs()
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (em *EconomyManager) cleanupSeenTxs() {
+	em.mu.Lock()
+	defer em.mu.Unlock()
+	cutoff := time.Now().Add(-seenTxTTL).UnixMilli()
+	pruned := 0
+	for _, acc := range em.accounts {
+		for txID, seenAt := range acc.SeenTxs {
+			if seenAt < cutoff {
+				delete(acc.SeenTxs, txID)
+				pruned++
+			}
+		}
+	}
+	if pruned > 0 {
+		log.Printf("[Economy] Pruned %d expired SeenTxs entries", pruned)
+		em.saveLocked()
+	}
 }
 
 func (em *EconomyManager) load() {
@@ -61,14 +104,16 @@ func (em *EconomyManager) load() {
 		json.Unmarshal(b, &em.accounts)
 		for _, acc := range em.accounts {
 			if acc.SeenTxs == nil {
-				acc.SeenTxs = make(map[string]bool)
+				acc.SeenTxs = make(map[string]int64)
 			}
 			if acc.Rating == 0 {
 				acc.Rating = 5.0 // Default decentralized reputation
 			}
-			// Rebuild seen txs from history if needed
+			// Rebuild seen txs from history if needed (migration from old bool-map format)
 			for _, tx := range acc.History {
-				acc.SeenTxs[tx.ID] = true
+				if _, exists := acc.SeenTxs[tx.ID]; !exists {
+					acc.SeenTxs[tx.ID] = tx.Time
+				}
 			}
 		}
 	}
@@ -89,7 +134,7 @@ func (em *EconomyManager) load() {
 			Balance: initialBalance,
 			History: make([]Transaction, 0),
 			Rating:  5.0,
-			SeenTxs: make(map[string]bool),
+			SeenTxs: make(map[string]int64),
 		}
 		em.saveLocked()
 	}
@@ -136,16 +181,16 @@ func (em *EconomyManager) MergeState(data []byte) error {
 	
 	for pid, oAcc := range oracleAccounts {
 		if _, ok := em.accounts[pid]; !ok {
-			em.accounts[pid] = &Account{SeenTxs: make(map[string]bool)}
+			em.accounts[pid] = &Account{SeenTxs: make(map[string]int64)}
 		}
 		acc := em.accounts[pid]
 		acc.Balance = oAcc.Balance
 		acc.Rating = oAcc.Rating
-		
+
 		// Merge history and seen txs safely
 		for _, tx := range oAcc.History {
-			if !acc.SeenTxs[tx.ID] {
-				acc.SeenTxs[tx.ID] = true
+			if acc.SeenTxs[tx.ID] == 0 {
+				acc.SeenTxs[tx.ID] = tx.Time
 				acc.History = append(acc.History, tx)
 			}
 		}
@@ -223,6 +268,25 @@ func (em *EconomyManager) GetAccount(peerID string) *Account {
 func (em *EconomyManager) verifyTx(tx *Transaction) error {
 	fromID, err := peer.Decode(tx.From)
 	if err != nil {
+		if tx.From == "SYSTEM_MINT_ADDRESS" {
+			// Verify that the mint was signed by the Oracle
+			var pub crypto.PubKey
+			if em.node.validator != nil && em.node.validator.OraclePubKey != nil {
+				pub = em.node.validator.OraclePubKey
+			} else {
+				// If we don't have the OraclePubKey, we might be the Oracle ourselves or it's uninitialized
+				pub = em.node.Host.Peerstore().PubKey(em.node.Host.ID()) 
+			}
+			if pub == nil {
+				return fmt.Errorf("cannot verify MINT: oracle public key missing")
+			}
+			msg := []byte(fmt.Sprintf("%s|%s|%f|%d", tx.From, tx.To, tx.Amount, tx.Time))
+			valid, err := pub.Verify(msg, tx.Signature)
+			if err != nil || !valid {
+				return fmt.Errorf("invalid signature for MINT")
+			}
+			return nil
+		}
 		return err
 	}
 
@@ -251,10 +315,10 @@ func (em *EconomyManager) ProcessTransaction(tx *Transaction) (bool, error) {
 	defer em.mu.Unlock()
 
 	if _, ok := em.accounts[tx.From]; !ok {
-		em.accounts[tx.From] = &Account{Balance: 0, Rating: 5.0, SeenTxs: make(map[string]bool)}
+		em.accounts[tx.From] = &Account{Balance: 0, Rating: 5.0, SeenTxs: make(map[string]int64)}
 	}
 	if _, ok := em.accounts[tx.To]; !ok {
-		em.accounts[tx.To] = &Account{Balance: 0, Rating: 5.0, SeenTxs: make(map[string]bool)}
+		em.accounts[tx.To] = &Account{Balance: 0, Rating: 5.0, SeenTxs: make(map[string]int64)}
 	}
 
 	fromAcc := em.accounts[tx.From]
@@ -272,26 +336,30 @@ func (em *EconomyManager) ProcessTransaction(tx *Transaction) (bool, error) {
 	if em.node.cfg.IsCommandCenter && tx.From == em.node.Host.ID().String() {
 		isOracle = true
 	}
+	if tx.From == "SYSTEM_MINT_ADDRESS" {
+		isOracle = true
+	}
 
 	creditLimit := fromAcc.Rating * 2.0 // Credit line based on decentralized reputation
 	if fromAcc.Balance+creditLimit < tx.Amount && !isOracle {
 		return false, fmt.Errorf("insufficient funds and exhausted decentralized credit limit")
 	}
 
-	// Replay protection O(1)
-	if fromAcc.SeenTxs[tx.ID] || toAcc.SeenTxs[tx.ID] {
-		// Already processed
+	// Replay protection O(1) — check both sender and receiver seen-sets
+	if fromAcc.SeenTxs[tx.ID] != 0 || toAcc.SeenTxs[tx.ID] != 0 {
+		// Already processed — idempotent
 		return false, nil
 	}
 
+	now := time.Now().UnixMilli()
 	fromAcc.Balance -= tx.Amount
 	toAcc.Balance += tx.Amount
 
-	fromAcc.SeenTxs[tx.ID] = true
+	fromAcc.SeenTxs[tx.ID] = now
 	fromAcc.History = append(fromAcc.History, *tx)
-	
+
 	if tx.From != tx.To {
-		toAcc.SeenTxs[tx.ID] = true
+		toAcc.SeenTxs[tx.ID] = now
 		toAcc.History = append(toAcc.History, *tx)
 	}
 
@@ -319,7 +387,7 @@ func (em *EconomyManager) ProcessTransaction(tx *Transaction) (bool, error) {
 	}
 
 	em.saveLocked()
-	log.Printf("💰 Economy: Processed TX %s (%s -> %s: %d ZPCN)", tx.ID, tx.From[:8], tx.To[:8], tx.Amount)
+	log.Printf("💰 Economy: Processed TX %s (%s -> %s: %.4f ZPCN)", tx.ID, tx.From[:8], tx.To[:8], tx.Amount)
 	return true, nil
 }
 
@@ -367,6 +435,45 @@ func (em *EconomyManager) CreateAndSendTransaction(to string, amount float64, co
 	return tx, nil
 }
 
+func (em *EconomyManager) Mint(amount float64) (*Transaction, error) {
+	if !em.node.cfg.IsCommandCenter {
+		return nil, fmt.Errorf("only command center can mint")
+	}
+
+	myID := em.node.Host.ID().String()
+	ts := time.Now().UnixNano() / int64(time.Millisecond)
+	msg := []byte(fmt.Sprintf("SYSTEM_MINT_ADDRESS|%s|%f|%d", myID, amount, ts))
+	
+	sig, err := em.node.PrivKey.Sign(msg)
+	if err != nil {
+		return nil, err
+	}
+
+	tx := &Transaction{
+		ID:        fmt.Sprintf("tx-mint-%d", ts),
+		From:      "SYSTEM_MINT_ADDRESS",
+		To:        myID,
+		Amount:    amount,
+		Time:      ts,
+		Comment:   "Oracle Minting Token Issue",
+		Signature: sig,
+	}
+
+	if _, err := em.ProcessTransaction(tx); err != nil {
+		return nil, err
+	}
+
+	em.BroadcastTransaction(tx)
+	return tx, nil
+}
+
+func (em *EconomyManager) Burn(amount float64) (*Transaction, error) {
+	if !em.node.cfg.IsCommandCenter {
+		return nil, fmt.Errorf("only command center can burn")
+	}
+	return em.CreateAndSendTransaction("SYSTEM_BURN_ADDRESS", amount, "Oracle Burning Tokens")
+}
+
 func (em *EconomyManager) rollbackTransaction(tx *Transaction) {
 	em.mu.Lock()
 	defer em.mu.Unlock()
@@ -405,7 +512,7 @@ func (em *EconomyManager) ProcessFaucet(peerID string) error {
 	em.mu.Lock()
 	acc, ok := em.accounts[peerID]
 	if !ok {
-		acc = &Account{Balance: 0, SeenTxs: make(map[string]bool)}
+		acc = &Account{Balance: 0, SeenTxs: make(map[string]int64)}
 		em.accounts[peerID] = acc
 	}
 	em.mu.Unlock()
@@ -511,12 +618,12 @@ func (em *EconomyManager) HasSeenTransaction(tx *Transaction) bool {
 	em.mu.RLock()
 	defer em.mu.RUnlock()
 	if acc, ok := em.accounts[tx.From]; ok {
-		if acc.SeenTxs[tx.ID] {
+		if acc.SeenTxs[tx.ID] != 0 {
 			return true
 		}
 	}
 	if acc, ok := em.accounts[tx.To]; ok {
-		if acc.SeenTxs[tx.ID] {
+		if acc.SeenTxs[tx.ID] != 0 {
 			return true
 		}
 	}

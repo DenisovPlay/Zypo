@@ -188,3 +188,45 @@ func (c *p2pVPNConn) SetReadDeadline(t time.Time) error {
 func (c *p2pVPNConn) SetWriteDeadline(t time.Time) error {
 	return c.Stream.SetWriteDeadline(t)
 }
+
+// DialUDP opens a P2P stream for UDP datagram forwarding.
+// Uses a dedicated /zypo/vpn-udp/1.0.0 protocol to distinguish from TCP streams.
+func (c *P2PVPNClient) DialUDP(addr string) (net.Conn, error) {
+	if c.providerID == "" {
+		return nil, fmt.Errorf("no provider selected")
+	}
+
+	pid, err := peer.Decode(c.providerID)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(c.node.GetContext(), 10*time.Second)
+	defer cancel()
+
+	s, err := c.node.Host.NewStream(ctx, pid, "/zypo/vpn-udp/1.0.0")
+	if err != nil {
+		// Fallback: tunnel UDP over the regular VPN stream with a UDP prefix
+		log.Printf("[VPN/UDP] vpn-udp protocol not supported by provider, falling back to TCP tunnel for %s", addr)
+		return c.Dial("udp", addr)
+	}
+
+	// Handshake: send UDP CONNECT
+	_, err = s.Write([]byte(fmt.Sprintf("UDP %s\n", addr)))
+	if err != nil {
+		s.Close()
+		return nil, err
+	}
+
+	reader := bufio.NewReader(s)
+	s.SetReadDeadline(time.Now().Add(10 * time.Second))
+	resp, err := reader.ReadString('\n')
+	if err != nil || strings.TrimSpace(resp) != "OK" {
+		s.Close()
+		return nil, fmt.Errorf("provider rejected UDP connection to %s: %s", addr, strings.TrimSpace(resp))
+	}
+	s.SetReadDeadline(time.Time{})
+
+	log.Printf("[VPN/UDP] UDP tunnel to %s ESTABLISHED via %s", addr, c.providerID)
+	return &p2pVPNConn{Stream: s, remoteAddr: addr}, nil
+}
