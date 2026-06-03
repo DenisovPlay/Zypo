@@ -48,7 +48,15 @@ func StartTUN(name string, vpnClient *P2PVPNClient, excludedIPs []string) (*TUNM
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol},
 	})
 
-	linkID := channel.New(512, 1500, "")
+	// Increase buffer sizes (e.g. 4MB)
+	rcvBufSize := tcpip.TCPReceiveBufferSizeRangeOption{Min: 4096, Default: 1048576, Max: 4194304}
+	s.SetTransportProtocolOption(tcp.ProtocolNumber, &rcvBufSize)
+
+	sndBufSize := tcpip.TCPSendBufferSizeRangeOption{Min: 4096, Default: 1048576, Max: 4194304}
+	s.SetTransportProtocolOption(tcp.ProtocolNumber, &sndBufSize)
+
+	// Increase channel buffer to hold more packets
+	linkID := channel.New(4096, 1500, "")
 	if terr := s.CreateNIC(1, linkID); terr != nil {
 		return nil, fmt.Errorf("NIC error: %v", terr)
 	}

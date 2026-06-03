@@ -118,15 +118,20 @@ func (n *ZypoNode) StartP2PVPNServer() {
 
 		go func() {
 			defer wg.Done()
-			buf := make([]byte, 32*1024)
+			buf := make([]byte, 64*1024)
+			var unbilled int64
 			for {
 				nBytes, err := br.Read(buf)
 				if nBytes > 0 {
-					if n.EconomyManager != nil && !n.EconomyManager.ConsumePrepaidTraffic(peerID, int64(nBytes)) {
-						log.Printf("[P2P VPN] Disconnecting %s: out of prepaid traffic", peerID)
-						nc.Close()
-						s.Close()
-						return
+					unbilled += int64(nBytes)
+					if unbilled >= 1024*1024 { // Bill every 1MB
+						if n.EconomyManager != nil && !n.EconomyManager.ConsumePrepaidTraffic(peerID, unbilled) {
+							log.Printf("[P2P VPN] Disconnecting %s: out of prepaid traffic", peerID)
+							nc.Close()
+							s.Close()
+							return
+						}
+						unbilled = 0
 					}
 					_, werr := nc.Write(buf[:nBytes])
 					if werr != nil {
@@ -137,20 +142,29 @@ func (n *ZypoNode) StartP2PVPNServer() {
 					break
 				}
 			}
+			// Final bill for remaining traffic
+			if unbilled > 0 && n.EconomyManager != nil {
+				n.EconomyManager.ConsumePrepaidTraffic(peerID, unbilled)
+			}
 			nc.Close()
 		}()
 		
 		go func() {
 			defer wg.Done()
-			buf := make([]byte, 32*1024)
+			buf := make([]byte, 64*1024)
+			var unbilled int64
 			for {
 				nBytes, err := nc.Read(buf)
 				if nBytes > 0 {
-					if n.EconomyManager != nil && !n.EconomyManager.ConsumePrepaidTraffic(peerID, int64(nBytes)) {
-						log.Printf("[P2P VPN] Disconnecting %s: out of prepaid traffic", peerID)
-						s.Close()
-						nc.Close()
-						return
+					unbilled += int64(nBytes)
+					if unbilled >= 1024*1024 {
+						if n.EconomyManager != nil && !n.EconomyManager.ConsumePrepaidTraffic(peerID, unbilled) {
+							log.Printf("[P2P VPN] Disconnecting %s: out of prepaid traffic", peerID)
+							s.Close()
+							nc.Close()
+							return
+						}
+						unbilled = 0
 					}
 					_, werr := s.Write(buf[:nBytes])
 					if werr != nil {
@@ -161,7 +175,11 @@ func (n *ZypoNode) StartP2PVPNServer() {
 					break
 				}
 			}
+			if unbilled > 0 && n.EconomyManager != nil {
+				n.EconomyManager.ConsumePrepaidTraffic(peerID, unbilled)
+			}
 			s.Close()
+			nc.Close()
 		}()
 
 		wg.Wait()
