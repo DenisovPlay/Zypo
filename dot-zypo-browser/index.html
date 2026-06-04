@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <title>Zypo Browser</title>
   <!-- Tailwind and Alpine.js -->
-  <link rel="stylesheet" href="dist/tailwind.css">
-  <script defer src="dist/alpine.min.js"></script>
+  <link rel="stylesheet" href="public/tailwind.css">
+  <script defer src="public/alpine.min.js"></script>
   <style>
     body { background-color: black; margin: 0; padding: 0; }
     .drag-region { -webkit-app-region: drag; }
@@ -22,8 +22,25 @@
 
     /* Reliable Stacking Contexts */
     .top-nav-area { position: relative; z-index: 200; background: black; }
-    #tabs-container { position: relative; z-index: 100; background: black; }
+    #tabs-container { 
+      position: relative; 
+      z-index: 100; 
+      background: black; 
+    }
     #views-container { position: relative; z-index: 10; }
+
+    /* Hide the native scrollbar completely to prevent layout gaps.
+       Horizontal scrolling works via the JS wheel event listener. */
+    #tabs-container::-webkit-scrollbar {
+      display: none;
+      width: 0;
+      height: 0;
+    }
+    #tabs-container {
+      -ms-overflow-style: none;  /* IE and Edge */
+      scrollbar-width: none;  /* Firefox */
+    }
+
 
     /* Dropdown alignment */
     .zypo-dropdown {
@@ -40,6 +57,35 @@
       z-index: 150;
       background: transparent;
     }
+
+    /* Windows custom titlebar buttons */
+    .win-titlebar {
+      display: none;
+      position: fixed;
+      top: 0;
+      right: 0;
+      z-index: 9999;
+      -webkit-app-region: no-drag;
+    }
+    .win-titlebar.visible { display: flex; }
+    .win-btn {
+      width: 46px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #aaa;
+      cursor: pointer;
+      transition: background 0.15s;
+      background: transparent;
+      border: none;
+      font-size: 12px;
+    }
+    .win-btn:hover { background: rgba(255,255,255,0.08); color: white; }
+    .win-btn.close:hover { background: #e81123; color: white; }
+
+    /* On Windows, the drag region must not cover the 3×46px titlebar buttons */
+    .win-drag-region { width: calc(100% - 138px) !important; }
   </style>
 </head>
 <body 
@@ -47,6 +93,19 @@
   x-init="init()"
   class="bg-black text-white h-screen w-screen overflow-hidden flex flex-col"
 >
+  <!-- Windows custom titlebar buttons (hidden on Mac) -->
+  <div id="win-titlebar" class="hidden h-[32px] w-[138px] absolute top-0 right-0 z-[1000] flex justify-end no-drag">
+    <button id="win-minimize" class="win-btn w-[46px] h-full flex items-center justify-center text-zinc-400">
+      <svg width="10" height="1" viewBox="0 0 10 1"><path fill="currentColor" d="M0 0h10v1H0z"/></svg>
+    </button>
+    <button id="win-maximize" class="win-btn w-[46px] h-full flex items-center justify-center text-zinc-400">
+      <svg width="10" height="10" viewBox="0 0 10 10"><path fill="currentColor" fill-rule="evenodd" d="M1 1h8v8H1V1zm1 1v6h6V2H2z"/></svg>
+    </button>
+    <button id="win-close" class="win-btn close w-[46px] h-full flex items-center justify-center text-zinc-400">
+      <svg width="10" height="10" viewBox="0 0 10 10"><path fill="currentColor" fill-rule="evenodd" d="M.707 1.414l8 8-.707.707-8-8z"/><path fill="currentColor" fill-rule="evenodd" d="M8.707.707l.707.707-8 8-.707-.707z"/></svg>
+    </button>
+  </div>
+
   <div class="h-6 w-full drag-region bg-black"></div>
   
   <!-- Navigation Header -->
@@ -363,5 +422,41 @@
   <script src="js/tabs.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/main.js"></script>
+  <script>
+    if (window.electron && !window.electron.isMac) {
+      // Show Windows custom titlebar buttons
+      const tb = document.getElementById('win-titlebar');
+      if (tb) {
+        tb.classList.remove('hidden');
+        tb.classList.add('flex');
+      }
+      document.getElementById('win-minimize').addEventListener('click', () => window.electron.windowMinimize());
+      document.getElementById('win-maximize').addEventListener('click', () => window.electron.windowMaximize());
+      document.getElementById('win-close').addEventListener('click', () => window.electron.windowClose());
+
+      // Shrink drag region so it doesn't overlap the 3 titlebar buttons (3×46px = 138px)
+      const dragRegion = document.querySelector('.drag-region');
+      if (dragRegion) dragRegion.classList.add('win-drag-region');
+
+      // Hide/show tabs wrapper if no tabs
+      window.electron.ipcRenderer.on('tabs-state', (e, count) => {
+        const tabsWrapper = document.getElementById('tabs-container');
+        if (tabsWrapper) {
+          tabsWrapper.style.display = count === 0 ? 'none' : 'flex';
+        }
+      });
+    }
+
+    // Horizontal scrolling for tabs via mouse wheel
+    const tabsCont = document.getElementById('tabs-container');
+    if (tabsCont) {
+      tabsCont.addEventListener('wheel', (e) => {
+        if (e.deltaY !== 0) {
+          e.preventDefault();
+          tabsCont.scrollLeft += e.deltaY;
+        }
+      }, { passive: false });
+    }
+  </script>
 </body>
 </html>

@@ -142,16 +142,15 @@
             width: 600px;
             height: 600px;
             border-radius: 50%;
-            filter: blur(120px);
             opacity: 0.15;
             z-index: -1;
             transition: background 0.8s ease;
             pointer-events: none;
         }
 
-        .status-disconnected .bg-glow { background: #3b82f6; }
-        .status-connected .bg-glow { background: #10b981; }
-        .status-connecting .bg-glow { background: #eab308; }
+        .status-disconnected .bg-glow { background: radial-gradient(circle, #3b82f6 0%, transparent 70%); }
+        .status-connected .bg-glow { background: radial-gradient(circle, #10b981 0%, transparent 70%); }
+        .status-connecting .bg-glow { background: radial-gradient(circle, #eab308 0%, transparent 70%); }
 
         /* Toggle Switch */
         .toggle-switch {

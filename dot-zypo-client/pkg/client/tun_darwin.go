@@ -4,6 +4,8 @@ package client
 
 import (
 	"log"
+
+	"github.com/songgao/water"
 )
 
 func (tm *TUNManager) cleanupRoutes() {
@@ -38,4 +40,26 @@ func (tm *TUNManager) configureOS() error {
 	hostIP := "10.0.0.2"
 	gwIP := "10.0.0.1"
 	return tm.runCmd("ifconfig", name, hostIP, gwIP, "up")
+}
+
+type waterIface struct {
+	*water.Interface
+}
+
+func (w *waterIface) Name() string {
+	return w.Interface.Name()
+}
+
+func openTUN(name string) (TUNInterface, error) {
+	config := water.Config{
+		DeviceType: water.TUN,
+		PlatformSpecificParams: water.PlatformSpecificParams{
+			Name: name,
+		},
+	}
+	iface, err := water.New(config)
+	if err != nil {
+		return nil, err
+	}
+	return &waterIface{iface}, nil
 }

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/songgao/water"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
@@ -22,8 +21,15 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+type TUNInterface interface {
+	Read(b []byte) (int, error)
+	Write(b []byte) (int, error)
+	Close() error
+	Name() string
+}
+
 type TUNManager struct {
-	iface         *water.Interface
+	iface         TUNInterface
 	s             *stack.Stack
 	vpnClient     *P2PVPNClient
 	excludedIPs   []string
@@ -36,9 +42,7 @@ type TUNManager struct {
 var GlobalTUN *TUNManager
 
 func StartTUN(name string, vpnClient *P2PVPNClient, excludedIPs []string) (*TUNManager, error) {
-	config := water.Config{DeviceType: water.TUN}
-	config.Name = name
-	iface, err := water.New(config)
+	iface, err := openTUN(name)
 	if err != nil {
 		return nil, err
 	}
@@ -89,6 +93,7 @@ func StartTUN(name string, vpnClient *P2PVPNClient, excludedIPs []string) (*TUNM
 				buf = append(buf, v...)
 			}
 			iface.Write(buf)
+			pkt.DecRef() // CRITICAL: Free packet back to pool
 		}
 	}()
 
@@ -155,7 +160,7 @@ func (tm *TUNManager) Deactivate() {
 	name := tm.iface.Name()
 	if runtime.GOOS == "darwin" {
 		tm.runCmd("ifconfig", name, "down")
-	} else {
+	} else if runtime.GOOS == "linux" {
 		tm.runCmd("ip", "link", "set", "dev", name, "down")
 	}
 

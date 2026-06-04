@@ -81,4 +81,4 @@ go run dot-zypo-server/main.go
 Detailed instructions on running the network, hosting your own websites, and configuring Reverse Proxy are available in the `docs/user_guide.md` file.
 
 **Developer Notice!**
-This public README covers the general operation of the network. Strictly confidential information (secret tokens, private certificate keys, internal hidden ports, and detailed security architecture) is located exclusively in the protected `internal_docs/` directory.
+This public README covers the general operation of the network. Strictly confidential information (secret tokens, private certificate keys, internal hidden ports, and detailed security architecture) is located exclusively in the protected directory.

@@ -49,14 +49,18 @@ func (c *P2PVPNClient) ConnectToProvider(providerID string) error {
 		if price <= 0 {
 			price = 0.5
 		}
-		// Prepay 1 ZPCN (which equals 1/price GB)
-		_, err := c.node.EconomyManager.CreateAndSendTransaction(providerID, 1.0, "VPN Prepay")
+		// Prepay for 100 MB to avoid large token drains on reconnects
+		prepayAmount := price * 0.1
+		if prepayAmount < 0.001 {
+			prepayAmount = 0.001
+		}
+		_, err := c.node.EconomyManager.CreateAndSendTransaction(providerID, prepayAmount, "VPN Prepay")
 		if err != nil {
 			log.Printf("[VPN] Warning: Failed to prepay VPN provider: %v", err)
 			c.providerID = ""
 			return fmt.Errorf("prepayment failed: %v", err)
 		}
-		log.Printf("[VPN] Prepaid 1.0 ZPCN to VPN provider %s", providerID)
+		log.Printf("[VPN] Prepaid %.4f ZPCN to VPN provider %s", prepayAmount, providerID)
 	}
 
 	// Try to open a stream to verify the VPN protocol is supported and reachable

@@ -14,5 +14,10 @@ contextBridge.exposeInMainWorld('electron', {
     openExternal: (url) => shell.openExternal(url),
     showItemInFolder: (filePath) => shell.showItemInFolder(filePath)
   },
-  getPreloadPath: (name) => ipcRenderer.sendSync('get-preload-path-sync', name)
+  getPreloadPath: (name) => ipcRenderer.sendSync('get-preload-path-sync', name),
+  isMac: ipcRenderer.sendSync('is-mac-sync'),
+  openExternal: (url) => ipcRenderer.send('open-external', url),
+  windowMinimize: () => ipcRenderer.send('window-minimize'),
+  windowMaximize: () => ipcRenderer.send('window-maximize'),
+  windowClose: () => ipcRenderer.send('window-close'),
 });

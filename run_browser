@@ -3,10 +3,12 @@
 
 # Usage: ./run_browser [bootstrap_multiaddr]
 
+set -e
+
 # Kill child processes on exit
 trap "kill 0" EXIT
 
-echo "Starting Zypo Browser (auto-restarting on .js/.html changes)..."
+echo "Starting Zypo Browser..."
 
 # If bootstrap address is provided as 1st argument, export it
 if [ ! -z "$1" ]; then
@@ -14,4 +16,25 @@ if [ ! -z "$1" ]; then
     echo "Custom bootstrap set: $1"
 fi
 
-cd dot-zypo-browser && npx nodemon --signal SIGTERM --watch . --ignore dist/ --ext js,html,css --exec "npm start"
+cd dot-zypo-browser
+
+# Build once before starting (compile daemons, CSS, copy Alpine)
+echo "Building assets..."
+npm run build
+
+echo ""
+echo "Watching for changes (js, html, css)..."
+echo "NOTE: daemon binaries are NOT rebuilt on watch — run 'npm run build:daemon' manually if Go code changed."
+echo ""
+
+# Watch ONLY source files, ignore bin/ and public/ (build output) and dist/
+# Use 'npm run dev' which skips build and just runs electron .
+npx nodemon \
+  --signal SIGTERM \
+  --watch . \
+  --ignore dist/ \
+  --ignore bin/ \
+  --ignore public/ \
+  --ignore node_modules/ \
+  --ext js,html,css \
+  --exec "npm run dev"

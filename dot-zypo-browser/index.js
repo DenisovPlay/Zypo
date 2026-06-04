@@ -1,6 +1,6 @@
-const { app, BrowserWindow, protocol, ipcMain, dialog, session, Menu } = require('electron')
+const { app, BrowserWindow, protocol, ipcMain, dialog, session, Menu, shell } = require('electron')
 const path = require('path')
-const { spawn } = require('child_process')
+const { spawn, spawnSync } = require('child_process')
 const fs = require('fs')
 const crypto = require('crypto')
 
@@ -8,6 +8,7 @@ app.setName('Zypo Browser')
 
 let mainWindow
 let daemonProcess
+let intentionalShutdown = false
 let daemonHealthTimer = null
 let daemonRestartCount = 0
 const MAX_DAEMON_RESTARTS = 5
@@ -22,10 +23,22 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 function getDaemonPath() {
-  let daemonPath = path.join(__dirname, 'bin', process.platform === 'win32' ? 'daemon.exe' : 'daemon')
+  const os = process.platform === 'win32' ? 'win' : (process.platform === 'darwin' ? 'mac' : 'linux')
+  const ext = process.platform === 'win32' ? '.exe' : ''
+  const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
+  const binName = `daemon-${os}-${arch}${ext}`
+
+  let daemonPath = path.join(__dirname, 'bin', binName)
   if (app.isPackaged) {
-    daemonPath = path.join(process.resourcesPath, 'bin', process.platform === 'win32' ? 'daemon.exe' : 'daemon')
+    daemonPath = path.join(process.resourcesPath, 'bin', binName)
   }
+  
+  // Fallback to old name for backwards compatibility during dev
+  if (!fs.existsSync(daemonPath)) {
+     const fallback = path.join(app.isPackaged ? process.resourcesPath : __dirname, 'bin', process.platform === 'win32' ? 'daemon.exe' : 'daemon')
+     if (fs.existsSync(fallback)) return fallback;
+  }
+  
   return daemonPath
 }
 
@@ -49,6 +62,8 @@ function getAvailablePort() {
 }
 
 async function startDaemon() {
+  if (daemonProcess) return
+  intentionalShutdown = false
   const daemonPath = getDaemonPath()
   if (!fs.existsSync(daemonPath)) {
     console.error('Daemon binary not found at', daemonPath)
@@ -63,6 +78,20 @@ async function startDaemon() {
   const daemonCwd = path.join(app.getPath('userData'), 'zypo-daemon')
   if (!fs.existsSync(daemonCwd)) {
     fs.mkdirSync(daemonCwd, { recursive: true })
+  }
+
+  if (process.platform === 'win32') {
+    const arch = process.arch === 'arm64' ? 'arm64' : 'amd64'
+    const binDir = path.dirname(daemonPath)
+    const wintunSrc = path.join(binDir, `wintun-${arch}.dll`)
+    const wintunDst = path.join(binDir, 'wintun.dll')
+    if (fs.existsSync(wintunSrc) && !fs.existsSync(wintunDst)) {
+      try {
+        fs.copyFileSync(wintunSrc, wintunDst)
+      } catch (e) {
+        console.error('Failed to copy wintun.dll:', e)
+      }
+    }
   }
 
   const settings = getSettings()
@@ -89,6 +118,7 @@ async function startDaemon() {
       line = line.trim()
       if (!line) continue
       console.log(`[Daemon] ${line}`)
+      try { fs.appendFileSync(path.join(app.getPath('userData'), 'main-debug.log'), `[Daemon] ${line}\n`) } catch(e){}
       const peerIdMatch = line.match(/^NODE_PEER_ID\s+(12D3KooW[a-zA-Z0-9]+)/)
       if (peerIdMatch) {
         LAST_PEER_ID = peerIdMatch[1]
@@ -98,12 +128,13 @@ async function startDaemon() {
   })
   daemonProcess.stderr.on('data', (data) => {
     console.error(`[Daemon ERR] ${data.toString().trim()}`)
+    try { fs.appendFileSync(path.join(app.getPath('userData'), 'main-debug.log'), `[Daemon ERR] ${data.toString().trim()}\n`) } catch(e){}
   })
   daemonProcess.on('exit', (code, signal) => {
     console.log(`[Daemon] Exited with code=${code} signal=${signal}`)
     daemonProcess = null
     // Auto-restart if not intentional shutdown
-    if (code !== 0 && daemonRestartCount < MAX_DAEMON_RESTARTS) {
+    if (!intentionalShutdown && code !== 0 && daemonRestartCount < MAX_DAEMON_RESTARTS) {
       daemonRestartCount++
       const delay = Math.min(1000 * daemonRestartCount, 10000)
       console.log(`[Daemon] Restarting in ${delay}ms (attempt ${daemonRestartCount}/${MAX_DAEMON_RESTARTS})...`)
@@ -140,6 +171,7 @@ async function startDaemon() {
 }
 
 function stopDaemon() {
+  intentionalShutdown = true
   stopDaemonHealthCheck()
   if (daemonProcess) {
     daemonProcess.kill('SIGTERM')
@@ -185,12 +217,14 @@ function stopDaemonHealthCheck() {
   }
 }
 
-
 function createWindow() {
+  const isMac = process.platform === 'darwin'
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    titleBarStyle: 'hiddenInset',
+    show: false,           // don't show until ready-to-show fires
+    frame: isMac,          // macOS: native frame with hiddenInset; Windows: fully frameless
+    ...(isMac ? { titleBarStyle: 'hiddenInset' } : {}),
     backgroundColor: '#000000',
     icon: path.join(__dirname, 'build/icon.png'),
     webPreferences: {
@@ -200,9 +234,13 @@ function createWindow() {
       preload: path.join(__dirname, 'js', 'preload_main.js')
     }
   })
+  mainWindow.setMenuBarVisibility(false)
+  mainWindow.autoHideMenuBar = true
+
+  // Show window only when renderer is ready — prevents black flash
+  mainWindow.once('ready-to-show', () => mainWindow.show())
 
   // Set up application menu to remove "Electron" references
-  const isMac = process.platform === 'darwin'
   const template = [
     ...(isMac ? [{
       label: 'Zypo Browser',
@@ -227,7 +265,7 @@ function createWindow() {
         { role: 'cut' },
         { role: 'copy' },
         { role: 'paste' },
-        { ...(isMac ? { role: 'pasteAndMatchStyle' } : {}) },
+        ...(isMac ? [{ role: 'pasteAndMatchStyle' }] : []),
         { role: 'delete' },
         { role: 'selectAll' }
       ]
@@ -266,7 +304,31 @@ function createWindow() {
   Menu.setApplicationMenu(menu)
 
   mainWindow.loadFile('index.html')
+  
+  // Write a basic debug log
+  const logFile = path.join(app.getPath('userData'), 'main-debug.log')
+  fs.writeFileSync(logFile, 'Main window loaded\n')
+
+  mainWindow.webContents.on('crashed', (e, killed) => {
+    fs.appendFileSync(logFile, `RENDERER CRASHED! killed=${killed}\n`)
+  })
+  mainWindow.webContents.on('did-fail-load', (e, errorCode, errorDescription) => {
+    fs.appendFileSync(logFile, `FAILED TO LOAD: ${errorCode} ${errorDescription}\n`)
+  })
 }
+
+process.on('uncaughtException', (err) => {
+  try {
+    fs.appendFileSync(path.join(app.getPath('userData'), 'main-debug.log'), `UNCAUGHT EXCEPTION: ${err.stack}\n`)
+  } catch (e) {}
+})
+
+process.on('unhandledRejection', (reason) => {
+  try {
+    const msg = reason instanceof Error ? reason.stack : String(reason)
+    fs.appendFileSync(path.join(app.getPath('userData'), 'main-debug.log'), `UNHANDLED REJECTION: ${msg}\n`)
+  } catch (e) {}
+})
 
 // Downloads history path and read
 ipcMain.handle('get-downloads-path', () => path.join(app.getPath('userData'), 'downloads.json'))
@@ -281,6 +343,17 @@ ipcMain.handle('get-downloads', () => {
 // Provide absolute app path for sandboxed preloads
 ipcMain.on('get-app-path-sync', (e) => { e.returnValue = __dirname; });
 ipcMain.on('get-preload-path-sync', (e, name) => { e.returnValue = path.join(__dirname, 'js', name); });
+ipcMain.on('is-mac-sync', (e) => { e.returnValue = process.platform === 'darwin'; });
+ipcMain.on('open-external', (e, url) => { shell.openExternal(url).catch(() => {}); });
+
+// Window control IPC for frameless Windows
+ipcMain.on('window-minimize', () => { if (mainWindow) mainWindow.minimize(); });
+ipcMain.on('window-maximize', () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMaximized()) mainWindow.unmaximize();
+  else mainWindow.maximize();
+});
+ipcMain.on('window-close', () => { if (mainWindow) mainWindow.close(); });
 
 // Bookmarks logic
 function getBookmarks() {
@@ -578,17 +651,105 @@ ipcMain.on('log-error', (e, message) => {
   }
 });
 
+ipcMain.handle('get-platform-info', () => ({
+  platform: process.platform,
+  isRoot: process.getuid ? process.getuid() === 0 : false,
+}));
+
+// macOS: ask user once per session if they want TUN (system-wide VPN) via sudo osascript
+async function askTunPrivilegesMac() {
+  const logFile = path.join(app.getPath('userData'), 'main-debug.log')
+  const flagFile = path.join(app.getPath('userData'), '.tun-declined')
+  if (fs.existsSync(flagFile)) return
+
+  const { response, checkboxChecked } = await dialog.showMessageBox({
+    type: 'question',
+    title: 'Zypo VPN — Системный TUN',
+    message: 'Для системного VPN нужны права администратора',
+    detail: 'Это позволит Zypo перехватывать весь трафик и шифровать его через P2P-сеть. Без этого браузер и SOCKS5-прокси работают в обычном режиме.',
+    buttons: ['Включить системный VPN (нужен пароль)', 'Продолжить без VPN'],
+    checkboxLabel: 'Не спрашивать снова',
+    defaultId: 0,
+    cancelId: 1,
+  })
+
+  if (checkboxChecked) fs.writeFileSync(flagFile, '1')
+  if (response !== 0) return
+
+  const daemonPath = getDaemonPath()
+  if (!fs.existsSync(daemonPath)) return
+
+  const daemonCwd = path.join(app.getPath('userData'), 'zypo-daemon')
+  const args = ['-rpc-token', RPC_TOKEN, '-rpc', String(RPC_PORT), '-port', '0']
+  const settings = getSettings()
+  const bootstrap = process.env.ZYPO_BOOTSTRAP || settings.commandCenterAddr
+  if (bootstrap && bootstrap.trim()) args.push('-bootstrap', bootstrap.trim())
+
+  // Stop the non-root daemon first
+  intentionalShutdown = true
+  if (daemonProcess) { daemonProcess.kill('SIGTERM'); daemonProcess = null }
+
+  // Wait 2 seconds for the old daemon to fully release ports (SOCKS5, RPC)
+  setTimeout(() => {
+    // Build osascript shell command
+    const esc = s => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    // Run WITHOUT '&' backgrounding so osascript blocks.
+    // This allows us to kill osascript when Electron quits, which in turn kills the root daemon.
+    const shellCmd = `cd "${esc(daemonCwd)}" && "${esc(daemonPath)}" ${args.map(a => `"${esc(a)}"`).join(' ')} >> "${esc(logFile)}" 2>&1`
+    const script = `do shell script "${esc(shellCmd)}" with administrator privileges`
+
+    console.log('[TUN] Executing osascript...')
+    
+    // Assign to daemonProcess so health checks and stopDaemon() work!
+    daemonProcess = spawn('osascript', ['-e', script])
+    
+    // Wait for the new root daemon to boot and answer RPC before showing success dialog
+    setTimeout(async () => {
+      try {
+        const res = await fetch(`http://127.0.0.1:${RPC_PORT}/rpc/status`, { headers: { 'Authorization': RPC_TOKEN } })
+        if (res.ok) {
+          try { fs.appendFileSync(logFile, '[TUN] Re-launched daemon with admin via osascript\\n') } catch(e) {}
+          console.log('[TUN] Daemon re-launched with administrator privileges')
+          dialog.showMessageBox({
+            type: 'info',
+            title: 'VPN включён',
+            message: 'Системный VPN (TUN) успешно активирован!',
+            detail: 'Весь сетевой трафик теперь шифруется через Zypo P2P-сеть.',
+            buttons: ['OK']
+          })
+        }
+      } catch(e) {}
+    }, 3000)
+
+    daemonProcess.on('exit', (code) => {
+      console.warn(`[TUN] osascript/daemon exited with code ${code}, restarting daemon without root`)
+      if (!intentionalShutdown) {
+        startDaemon() // restart without root
+      }
+    })
+    
+    daemonProcess.stderr.on('data', data => {
+      try { fs.appendFileSync(logFile, `[TUN] osascript err: ${data.toString()}\\n`) } catch(e) {}
+    })
+  }, 2000)
+}
+
 app.whenReady().then(async () => {
 RPC_PORT = await getAvailablePort()
 await startDaemon()
+
+// macOS: offer to re-launch daemon with admin rights for TUN support
+if (process.platform === 'darwin' && process.getuid && process.getuid() !== 0) {
+  askTunPrivilegesMac()
+}
 protocol.handle('zb', async (req) => {
   const url = req.url
   const parsedUrl = new URL(url)
   const domain = parsedUrl.hostname
 
   if (domain === 'dist') {
-
-       const distFile = path.join(__dirname, 'dist', parsedUrl.pathname.replace(/^\/+/, ''))
+       let targetFolder = 'public'
+       const distFile = path.join(__dirname, targetFolder, parsedUrl.pathname.replace(/^\/+/, ''))
        if (fs.existsSync(distFile)) {
           const ext = path.extname(distFile)
           const mime = ext === '.css' ? 'text/css' : (ext === '.js' ? 'application/javascript' : 'text/plain')

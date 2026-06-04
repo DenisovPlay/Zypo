@@ -8,6 +8,7 @@ import (
 	"net"
 
 	"github.com/vishvananda/netlink"
+	"github.com/songgao/water"
 )
 
 func (tm *TUNManager) cleanupRoutes() {
@@ -97,4 +98,26 @@ func (tm *TUNManager) configureOS() error {
 		return fmt.Errorf("failed to bring link up: %v", err)
 	}
 	return nil
+}
+
+type waterIface struct {
+	*water.Interface
+}
+
+func (w *waterIface) Name() string {
+	return w.Interface.Name()
+}
+
+func openTUN(name string) (TUNInterface, error) {
+	config := water.Config{
+		DeviceType: water.TUN,
+		PlatformSpecificParams: water.PlatformSpecificParams{
+			Name: name,
+		},
+	}
+	iface, err := water.New(config)
+	if err != nil {
+		return nil, err
+	}
+	return &waterIface{iface}, nil
 }

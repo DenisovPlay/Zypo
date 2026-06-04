@@ -1,24 +1,25 @@
 {
   "name": "dot-zypo-browser",
   "productName": "Zypo Browser",
-  "version": "1.1.0",
+  "version": "0.0.1-alpha",
   "description": "Decentralized P2P Web Browser",
   "main": "index.js",
   "scripts": {
-    "build:css": "npx tailwindcss -i ./src/tailwind.css -o ./dist/tailwind.css --minify",
-    "build:daemon": "mkdir -p bin && cd ../dot-zypo-client && go build -o ../dot-zypo-browser/bin/daemon main.go",
-    "copy:alpine": "node -e \"const fs=require('fs');fs.mkdirSync('dist',{recursive:true});fs.copyFileSync('node_modules/alpinejs/dist/cdn.min.js','dist/alpine.min.js');console.log('Alpine.js copied to dist/')\"",
+    "build:css": "npx tailwindcss -i ./src/tailwind.css -o ./public/tailwind.css --minify",
+    "build:daemon": "mkdir -p bin && node scripts/download_wintun.js && cd ../dot-zypo-client && GOOS=darwin GOARCH=arm64 go build -o ../dot-zypo-browser/bin/daemon-mac-arm64 main.go && GOOS=darwin GOARCH=amd64 go build -o ../dot-zypo-browser/bin/daemon-mac-x64 main.go && GOOS=windows GOARCH=amd64 go build -o ../dot-zypo-browser/bin/daemon-win-x64.exe main.go && GOOS=windows GOARCH=arm64 go build -o ../dot-zypo-browser/bin/daemon-win-arm64.exe main.go",
+    "copy:alpine": "node -e \"const fs=require('fs');fs.mkdirSync('public',{recursive:true});fs.copyFileSync('node_modules/alpinejs/dist/cdn.min.js','public/alpine.min.js');console.log('Alpine.js copied to public/')\"",
     "build": "npm run build:daemon && npm run build:css && npm run copy:alpine",
     "start": "npm run build && electron .",
     "dev": "electron .",
-    "build:mac": "npm run build && electron-builder --mac",
-    "build:win": "npm run build && electron-builder --win",
+    "build:mac": "npm run build && electron-builder --mac --arm64 --x64",
+    "build:win": "npm run build && electron-builder --win --arm64 --x64",
     "build:linux": "npm run build && electron-builder --linux",
-    "build:all": "npm run build && electron-builder -mwl"
+    "build:all": "npm run build && electron-builder --mac --win --arm64 --x64"
   },
   "build": {
     "appId": "com.zypo.browser",
     "productName": "Zypo Browser",
+    "artifactName": "Zypo.Browser-${version}-${os}-${arch}.${ext}",
     "asar": true,
     "extraResources": [
       {
